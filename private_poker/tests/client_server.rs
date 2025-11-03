@@ -21,7 +21,7 @@ fn get_random_open_port() -> u16 {
 fn already_associated_err() {
     let port = get_random_open_port();
     let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
-    thread::spawn(move || server::run(addr.clone(), server::PokerConfig::default()));
+    thread::spawn(move || server::run(addr, server::PokerConfig::default()));
 
     // Connect, make sure we're spectating.
     let username = Username::new("ognf");
@@ -39,7 +39,7 @@ fn already_associated_err() {
 fn one_user_connects_to_lobby() {
     let port = get_random_open_port();
     let addr: SocketAddr = format!("127.0.0.1:{port}").parse().unwrap();
-    thread::spawn(move || server::run(addr.clone(), server::PokerConfig::default()));
+    thread::spawn(move || server::run(addr, server::PokerConfig::default()));
 
     // Connect, make sure we're spectating.
     let username = Username::new("ognf");
@@ -94,7 +94,7 @@ fn one_user_fails_to_connect_to_lobby() {
         step: Duration::from_secs(5),
     }
     .into();
-    thread::spawn(move || server::run(addr.clone(), config));
+    thread::spawn(move || server::run(addr, config));
 
     // Try to connect, but we won't be fast enough.
     let username = Username::new("ognf");

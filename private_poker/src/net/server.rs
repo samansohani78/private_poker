@@ -148,7 +148,7 @@ impl RateLimiter {
         }
 
         // Clean up old connection timestamps outside the window
-        let timestamps = self.connections.entry(ip).or_insert_with(VecDeque::new);
+        let timestamps = self.connections.entry(ip).or_default();
         while let Some(&oldest) = timestamps.front() {
             if now.duration_since(oldest) > RATE_LIMIT_WINDOW {
                 timestamps.pop_front();

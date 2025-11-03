@@ -1,10 +1,10 @@
 use anyhow::{Error, bail};
 use chrono::{DateTime, Utc};
 use mio::{Events, Interest, Poll, Waker};
+use pp_client::commands;
 use private_poker::{
-    entities::{Action, Card, GameView, Suit, Usd, User, Username, Vote},
+    entities::{Card, GameView, Suit, User, Username},
     functional,
-    messages::UserState,
     net::{
         messages::{ClientMessage, ServerMessage, UserCommand},
         server::{DEFAULT_POLL_TIMEOUT, SERVER, WAKER},
@@ -227,44 +227,9 @@ impl App {
         tx_client: &Sender<ClientMessage>,
         waker: &Waker,
     ) -> Result<(), Error> {
-        let result = match user_input.trim() {
-            "all-in" => Ok(UserCommand::TakeAction(Action::AllIn)),
-            "call" => Ok(UserCommand::TakeAction(Action::Call)),
-            "check" => Ok(UserCommand::TakeAction(Action::Check)),
-            "fold" => Ok(UserCommand::TakeAction(Action::Fold)),
-            "play" => Ok(UserCommand::ChangeState(UserState::Play)),
-            "show" => Ok(UserCommand::ShowHand),
-            "spectate" => Ok(UserCommand::ChangeState(UserState::Spectate)),
-            "start" => Ok(UserCommand::StartGame),
-            other => {
-                let other: Vec<&str> = other.split_ascii_whitespace().collect();
-                match other.first() {
-                    Some(&"raise") => {
-                        let result = match other.get(1) {
-                            // Raise with a specific amount.
-                            Some(value) => match value.parse::<Usd>() {
-                                Ok(amount) => Ok(Action::Raise(Some(amount))),
-                                Err(_) => Err(format!("Invalid raise amount '{}'. Must be a positive number (e.g., 'raise 100')", value)),
-                            },
-                            None => Ok(Action::Raise(None)),
-                        };
-                        result.map(UserCommand::TakeAction)
-                    }
-                    Some(&"vote") => match (other.get(1), other.get(2)) {
-                        (Some(&"kick"), Some(username)) => {
-                            Ok(UserCommand::CastVote(Vote::Kick(Username::new(username))))
-                        }
-                        (Some(&"reset"), Some(username)) => Ok(UserCommand::CastVote(Vote::Reset(
-                            Some(Username::new(username)),
-                        ))),
-                        (Some(&"reset"), None) => Ok(UserCommand::CastVote(Vote::Reset(None))),
-                        (Some(&"kick"), None) => Err("Vote kick requires a username (e.g., 'vote kick alice')".to_string()),
-                        _ => Err("Invalid vote command. Use 'vote kick USERNAME' or 'vote reset [USERNAME]'".to_string()),
-                    },
-                    _ => Err(format!("Unrecognized command '{}'. Type 'help' to see available commands", other.join(" "))),
-                }
-            }
-        };
+        // Parse the command using the dedicated command parser
+        let result = commands::parse_command(user_input);
+
         match result {
             Ok(command) => {
                 let msg = ClientMessage {
@@ -274,8 +239,8 @@ impl App {
                 tx_client.send(msg)?;
                 waker.wake()?;
             }
-            Err(message) => {
-                let record = Record::new(RecordKind::Error, message);
+            Err(parse_error) => {
+                let record = Record::new(RecordKind::Error, parse_error.to_string());
                 self.log_handle.push(record.into());
             }
         }

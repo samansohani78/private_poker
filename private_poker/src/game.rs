@@ -730,8 +730,14 @@ impl<T> PhaseIndependentUserManagement for Game<T> {
 
 // User management implementations for game states where user states can be
 // immediately updated since it wouldn't interfere with gameplay.
+/// Unified macro for implementing PhaseDependentUserManagement trait.
+///
+/// Supports two modes:
+/// - `immediate`: Directly removes/modifies players (for non-gameplay phases)
+/// - `queued`: Queues player operations during gameplay to avoid interference
 macro_rules! impl_user_managers {
-    ($($t:ty),+) => {
+    // Immediate execution mode (non-gameplay phases)
+    (immediate: $($t:ty),+) => {
         $(impl PhaseDependentUserManagement for $t {
             fn kick_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
                 let user = if let Some(user) = self.data.spectators.take(username) {
@@ -826,15 +832,10 @@ macro_rules! impl_user_managers {
                 Ok(Some(true))
             }
         })*
-    }
-}
+    };
 
-// User management implementations for game states where user states can't be
-// immediately updated since it'd interfere with gameplay. Generally, if a user
-// state can't be updated, they're instead queued to be updated and are then
-// updated at a later game state.
-macro_rules! impl_user_managers_with_queue {
-    ($($t:ty),+) => {
+    // Queued execution mode (gameplay phases)
+    (queued: $($t:ty),+) => {
         $(impl PhaseDependentUserManagement for $t {
             fn kick_user(&mut self, username: &Username) -> Result<Option<bool>, UserError> {
                 // The player has already been queued for kick. Just wait for
@@ -922,10 +923,10 @@ macro_rules! impl_user_managers_with_queue {
                 Ok(Some(true))
             }
         })*
-    }
+    };
 }
 
-impl_user_managers!(
+impl_user_managers!(immediate:
     Game<Lobby>,
     Game<SeatPlayers>,
     Game<RemovePlayers>,
@@ -933,7 +934,7 @@ impl_user_managers!(
     Game<BootPlayers>
 );
 
-impl_user_managers_with_queue!(
+impl_user_managers!(queued:
     Game<MoveButton>,
     Game<CollectBlinds>,
     Game<Deal>,

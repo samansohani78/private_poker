@@ -22,15 +22,30 @@ use super::{
     utils,
 };
 
+/// Default timeout for reading from the server.
 pub const READ_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Default timeout for writing to the server.
 pub const WRITE_TIMEOUT: Duration = Duration::from_secs(1);
 
+/// A blocking TCP client for connecting to a poker server.
+///
+/// This client provides a synchronous interface for sending commands
+/// and receiving updates from the server. Primarily used for testing
+/// and simple client implementations.
 pub struct Client {
+    /// The username associated with this client.
     pub username: Username,
+    /// The underlying TCP stream.
     pub stream: TcpStream,
 }
 
 impl Client {
+    /// Cast a vote (kick user or reset money).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the message cannot be sent to the server.
     pub fn cast_vote(&mut self, vote: Vote) -> Result<(), Error> {
         let msg = ClientMessage {
             username: self.username.clone(),
@@ -40,6 +55,11 @@ impl Client {
         Ok(())
     }
 
+    /// Change the user's state (join waitlist or become spectator).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the message cannot be sent to the server.
     pub fn change_state(&mut self, state: UserState) -> Result<(), Error> {
         let msg = ClientMessage {
             username: self.username.clone(),
@@ -49,6 +69,23 @@ impl Client {
         Ok(())
     }
 
+    /// Connect to a poker server and receive the initial game view.
+    ///
+    /// This method attempts to connect with exponential backoff, trying
+    /// three times with decreasing timeouts (1s, 500ms, 100ms).
+    ///
+    /// # Arguments
+    ///
+    /// * `username` - The username for this client
+    /// * `addr` - The server socket address
+    ///
+    /// # Returns
+    ///
+    /// Returns the connected client and initial game view on success.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unable to connect or if the server rejects the connection.
     pub fn connect(username: Username, addr: &SocketAddr) -> Result<(Self, GameView), Error> {
         let mut connect_timeouts = vec![
             Duration::from_secs(1),

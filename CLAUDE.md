@@ -201,3 +201,255 @@ Per the README, the following are explicitly out of scope:
 - Server orchestration or scaling
 - Persistent storage or backups
 - UIs beyond TUI
+
+---
+
+## Code Quality Guidelines
+
+### General Principles
+
+1. **Favor clarity over cleverness**: Code should be self-documenting where possible
+2. **Keep functions focused**: Each function should have a single, clear responsibility
+3. **Use the type system**: Leverage Rust's type system for compile-time guarantees
+4. **Test thoroughly**: Every new feature should include appropriate tests
+
+### Function Size Limits
+
+- **Maximum function length**: 80 lines
+- **Target length**: 20-40 lines for most functions
+- If a function exceeds 80 lines, extract logical sub-components into helper functions
+
+**Good Example** (from Sprint 5 refactoring):
+```rust
+// Before: 235-line monolithic draw() function
+fn draw(&mut self, view: &GameView, frame: &mut Frame) { /* ... 235 lines ... */ }
+
+// After: Orchestration with focused helpers
+fn draw(&mut self, view: &GameView, frame: &mut Frame) {
+    self.draw_spectators(view, frame, spectator_area);
+    self.draw_waitlist(view, frame, waitlister_area);
+    self.draw_table(view, frame, table_area);
+    // ... etc
+}
+
+fn draw_spectators(&self, view: &GameView, frame: &mut Frame, area: Rect) {
+    // 14 focused lines for spectator rendering
+}
+```
+
+### Module Organization
+
+1. **Separate concerns**: Command parsing, UI rendering, and business logic should be in different modules
+2. **Public API**: Only expose what's necessary; keep implementation details private
+3. **Module documentation**: Every public module should have module-level documentation (`//!`)
+
+**Good Example** (from Sprint 5):
+```rust
+// pp_client/src/commands.rs - Dedicated command parser module
+pub fn parse_command(input: &str) -> Result<UserCommand, ParseError> {
+    // Clear, testable, single responsibility
+}
+```
+
+### Error Handling
+
+1. **Use Result types**: Prefer `Result<T, E>` over panics for recoverable errors
+2. **Descriptive errors**: Error messages should help users understand what went wrong
+
+```rust
+// Good: Descriptive error with context
+Err(ParseError::InvalidRaiseAmount(value.to_string()))
+
+// Bad: Generic error
+Err("Invalid input")
+```
+
+### Code Duplication
+
+- **DRY principle**: Don't repeat yourself
+- **Extract common patterns**: If you see the same code twice, consider extracting it
+- **Use macros judiciously**: Macros are powerful but can reduce clarity
+
+**Good Example** (from Sprint 5):
+```rust
+// Before: Two nearly identical macros with 80% duplication
+macro_rules! impl_user_managers { /* ... */ }
+macro_rules! impl_user_managers_with_queue { /* ... */ }
+
+// After: Unified macro with mode parameter
+impl_user_managers!(immediate: Game<Lobby>, /* ... */);
+impl_user_managers!(queued: Game<Deal>, /* ... */);
+```
+
+### Testing Standards
+
+1. **Test coverage**: Aim for comprehensive coverage of public APIs
+2. **Test naming**: Use descriptive names that explain what's being tested
+3. **Test organization**: Group related tests with clear comments
+
+```rust
+// Good: Clear test structure
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // === Single-word command tests ===
+
+    #[test]
+    fn test_parse_call() {
+        let result = parse_command("call");
+        assert!(matches!(result, Ok(UserCommand::TakeAction(Action::Call))));
+    }
+
+    // === Error cases ===
+
+    #[test]
+    fn test_parse_unrecognized_command() {
+        let result = parse_command("invalid");
+        assert!(matches!(result, Err(ParseError::UnrecognizedCommand(_))));
+    }
+}
+```
+
+### Documentation Standards
+
+1. **Public APIs**: All public functions, structs, and modules must have rustdoc comments
+2. **Examples**: Include examples in documentation when helpful
+3. **Errors**: Document error conditions with `# Errors` section
+
+```rust
+/// Parse a command string into a UserCommand.
+///
+/// # Arguments
+///
+/// * `input` - The raw command string from user input
+///
+/// # Returns
+///
+/// * `Ok(UserCommand)` - Successfully parsed command
+/// * `Err(ParseError)` - Parse error with descriptive message
+///
+/// # Examples
+///
+/// ```
+/// use pp_client::commands::parse_command;
+/// let cmd = parse_command("call")?;
+/// ```
+pub fn parse_command(input: &str) -> Result<UserCommand, ParseError> {
+    // ...
+}
+```
+
+### Performance Considerations
+
+1. **Measure before optimizing**: Use benchmarks to identify actual bottlenecks
+2. **Arc for shared data**: Use `Arc` to avoid cloning large structures
+3. **Iterator chains**: Prefer iterator methods over manual loops for better compiler optimization
+
+**Good Example** (from Sprint 4):
+```rust
+// Optimized: Using iterator chain
+let players: Vec<PlayerView> = self.data.players
+    .iter()
+    .map(|player| /* ... */)
+    .collect();
+
+// Less optimal: Manual loop
+let mut players = Vec::new();
+for player in &self.data.players {
+    players.push(/* ... */);
+}
+```
+
+### Clippy and Formatting
+
+1. **Zero clippy warnings**: Production code should have no clippy warnings
+2. **Auto-format**: Always run `cargo fmt` before committing
+3. **Fix suggestions**: Address clippy suggestions unless there's a good reason not to
+
+```bash
+# Check for warnings
+cargo clippy -- -D warnings
+
+# Auto-fix issues
+cargo clippy --fix --allow-dirty
+
+# Format code
+cargo fmt --all
+```
+
+### Git Commit Practices
+
+1. **Atomic commits**: Each commit should represent a single logical change
+2. **Clear messages**: Describe what and why, not just what
+3. **Test before committing**: Ensure all tests pass
+
+```
+Good commit message:
+refactor: Extract command parser into dedicated module
+
+Moved command parsing logic from app.rs to commands.rs
+to improve testability and separation of concerns.
+Added 30 tests for all command variants.
+
+Bad commit message:
+updated code
+```
+
+---
+
+## Common Patterns
+
+### State Machine Pattern
+
+When adding a new game state:
+
+1. Define zero-sized type marker
+2. Implement `Into<PokerState>`
+3. Implement required traits via `enum_dispatch`
+4. Add to `PokerState` enum
+5. Add tests for state transitions
+
+### User Management Pattern
+
+Choose the appropriate mode based on whether the operation should be immediate or queued:
+
+```rust
+// Immediate: For non-gameplay phases
+impl_user_managers!(immediate: Game<Lobby>, Game<RemovePlayers>);
+
+// Queued: For gameplay phases to avoid disrupting hands
+impl_user_managers!(queued: Game<Deal>, Game<TakeAction>);
+```
+
+### View Generation Pattern
+
+Use Arc-based sharing for read-only data that's common across all views:
+
+```rust
+let shared = SharedViewData {
+    blinds: Arc::new(self.data.blinds.clone()),
+    board: Arc::new(self.data.board.clone()),
+    // ... other shared fields
+};
+
+users.map(|username| {
+    GameView {
+        blinds: shared.blinds.clone(),  // Cheap Arc clone
+        players: personalize_for(username),  // Personalized data
+        // ...
+    }
+})
+```
+
+---
+
+## Resources
+
+- **Architecture Documentation**: See `ARCHITECTURE.md` for detailed system design
+- **Sprint Summaries**: `SPRINT_4_SUMMARY.md`, `SPRINT_5_PLAN.md` for recent improvements
+- **Generated Docs**: Run `cargo doc --no-deps --open` to view rustdoc
+
+---
+
+**Last Updated:** Sprint 5 Completion

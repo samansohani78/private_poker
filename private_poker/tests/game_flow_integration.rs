@@ -8,7 +8,7 @@ use std::{net::SocketAddr, thread, time::Duration};
 
 use private_poker::{
     Client, UserError,
-    game::{GameEvent, entities::Username},
+    game::entities::Username,
     messages,
     server::{self, PokerConfig},
 };
