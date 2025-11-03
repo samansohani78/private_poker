@@ -2,11 +2,22 @@ use bincode::{ErrorKind, deserialize, serialize};
 use serde::{Serialize, de::DeserializeOwned};
 use std::io::{self, Read, Write};
 
+/// Maximum allowed message size (1MB) to prevent DoS attacks via unbounded allocation
+const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
+
 pub fn read_prefixed<T: DeserializeOwned, R: Read>(reader: &mut R) -> io::Result<T> {
     // Read the size as a u32
     let mut len_bytes = [0; 4];
     reader.read_exact(&mut len_bytes)?;
     let len = u32::from_le_bytes(len_bytes) as usize;
+
+    // Validate message size to prevent DoS attacks
+    if len > MAX_MESSAGE_SIZE {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("message size {} exceeds maximum allowed size of {} bytes", len, MAX_MESSAGE_SIZE)
+        ));
+    }
 
     // Read the remaining data. If we get a would block error,
     // then it's very likely that the sender doesn't follow the
@@ -35,6 +46,14 @@ pub fn read_prefixed<T: DeserializeOwned, R: Read>(reader: &mut R) -> io::Result
 pub fn write_prefixed<T: Serialize, W: Write>(writer: &mut W, value: &T) -> io::Result<()> {
     match serialize(&value) {
         Ok(serialized) => {
+            // Validate message size before sending
+            if serialized.len() > MAX_MESSAGE_SIZE {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("serialized message size {} exceeds maximum allowed size of {} bytes", serialized.len(), MAX_MESSAGE_SIZE)
+                ));
+            }
+
             // Write the size of the serialized data and the serialized data
             // all in one chunk to prevent read-side EOF race conditions.
             let size = serialized.len() as u32;
@@ -99,6 +118,21 @@ mod tests {
         assert_eq!(
             read_prefixed::<String, TcpStream>(&mut client).map_err(|e| e.kind()),
             Err(io::ErrorKind::UnexpectedEof)
+        );
+    }
+
+    #[test]
+    fn reject_oversized_message() {
+        let (mut client, mut stream) = setup();
+
+        // Send a size prefix claiming 2GB of data (DoS attack attempt)
+        let malicious_size = 2_000_000_000u32;
+        assert!(stream.write_all(&malicious_size.to_le_bytes()).is_ok());
+
+        // Should reject with InvalidData, not attempt allocation
+        assert_eq!(
+            read_prefixed::<String, TcpStream>(&mut client).map_err(|e| e.kind()),
+            Err(io::ErrorKind::InvalidData)
         );
     }
 }

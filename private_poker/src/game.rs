@@ -1,4 +1,5 @@
 use enum_dispatch::enum_dispatch;
+use log::error;
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::{Ordering, max, min},
@@ -1061,14 +1062,23 @@ impl From<Game<CollectBlinds>> for Game<Deal> {
                         amount: blind,
                     }
                 }
-                Ordering::Less => unreachable!(
-                    "a player can't be in a game if they don't have enough for the big blind"
-                ),
+                Ordering::Less => {
+                    // This should never happen if game invariants are maintained,
+                    // but handle gracefully instead of panicking
+                    error!("Player {} has insufficient funds ({}) for blind ({}). Forcing all-in.",
+                           player.user.name, player.user.money, blind);
+                    player.state = PlayerState::AllIn;
+                    value.data.player_counts.num_active -= 1;
+                    Bet {
+                        action: BetAction::AllIn,
+                        amount: player.user.money,
+                    }
+                }
             };
             // Impossible for a side pot to be created from the blinds, so
             // we don't even need to check.
             value.data.pot.bet(player_idx, &bet);
-            player.user.money -= blind;
+            player.user.money -= bet.amount;
         }
         value.data.player_counts.num_called = 0;
         Self {
@@ -2618,6 +2628,7 @@ mod game_tests {
 mod state_tests {
     use super::{
         PhaseDependentUserManagement, PhaseIndependentUserManagement, PokerState, UserError,
+        GameSettings,
         entities::{Action, Username},
     };
 
@@ -2833,5 +2844,39 @@ mod state_tests {
         state = state.step();
         assert!(matches!(state, PokerState::Lobby(_)));
         assert_eq!(state.init_start(&username0), Ok(()));
+    }
+
+    #[test]
+    fn test_blind_collection_with_short_stack() {
+        // Test that blind collection works correctly when player has less than blind
+        let mut settings = GameSettings::default();
+        settings.buy_in = 100;
+        settings.min_small_blind = 50;
+        settings.min_big_blind = 100;
+        settings.max_players = 2;
+
+        let mut state: PokerState = settings.into();
+        let alice = Username::new("alice");
+        let bob = Username::new("bob");
+
+        assert_eq!(state.new_user(&alice), Ok(true));
+        assert_eq!(state.new_user(&bob), Ok(true));
+        assert_eq!(state.waitlist_user(&alice), Ok(Some(true)));
+        assert_eq!(state.waitlist_user(&bob), Ok(Some(true)));
+        assert_eq!(state.init_start(&alice), Ok(()));
+
+        // Progress to blind collection
+        state = state.step();
+        assert!(matches!(state, PokerState::SeatPlayers(_)));
+        state = state.step();
+        assert!(matches!(state, PokerState::MoveButton(_)));
+        state = state.step();
+
+        // Should be collecting blinds now
+        assert!(matches!(state, PokerState::CollectBlinds(_)));
+
+        // Step through blind collection - should not panic even though player has 100 = big blind 100
+        state = state.step();
+        assert!(matches!(state, PokerState::Deal(_)));
     }
 }

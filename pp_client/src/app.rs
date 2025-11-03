@@ -65,10 +65,8 @@ vote reset
         reset everyone's money. Entering USER will vote to reset that specific
         user's money.
 ";
-const INVALID_RAISE_MESSAGE: &str = "invalid raise amount";
 const MAX_LOG_RECORDS: usize = 1024;
 const POLL_TIMEOUT: Duration = Duration::from_millis(100);
-const UNRECOGNIZED_COMMAND_MESSAGE: &str = "unrecognized command";
 
 fn make_board_spans(view: &GameView) -> Vec<Span<'_>> {
     (!view.board.is_empty())
@@ -116,6 +114,12 @@ enum RecordKind {
     Error,
     Game,
     You,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum ConnectionStatus {
+    Connected,
+    Disconnected,
 }
 
 /// A timestamped terminal message with an importance label to help
@@ -212,6 +216,8 @@ pub struct App {
     log_handle: ScrollableList,
     /// Current value of the input box
     user_input: UserInput,
+    /// Connection status indicator
+    connection_status: ConnectionStatus,
 }
 
 impl App {
@@ -238,7 +244,7 @@ impl App {
                             // Raise with a specific amount.
                             Some(value) => match value.parse::<Usd>() {
                                 Ok(amount) => Ok(Action::Raise(Some(amount))),
-                                Err(_) => Err(INVALID_RAISE_MESSAGE.to_string()),
+                                Err(_) => Err(format!("Invalid raise amount '{}'. Must be a positive number (e.g., 'raise 100')", value)),
                             },
                             None => Ok(Action::Raise(None)),
                         };
@@ -252,9 +258,10 @@ impl App {
                             Some(Username::new(username)),
                         ))),
                         (Some(&"reset"), None) => Ok(UserCommand::CastVote(Vote::Reset(None))),
-                        _ => Err(UNRECOGNIZED_COMMAND_MESSAGE.to_string()),
+                        (Some(&"kick"), None) => Err("Vote kick requires a username (e.g., 'vote kick alice')".to_string()),
+                        _ => Err("Invalid vote command. Use 'vote kick USERNAME' or 'vote reset [USERNAME]'".to_string()),
                     },
-                    _ => Err(UNRECOGNIZED_COMMAND_MESSAGE.to_string()),
+                    _ => Err(format!("Unrecognized command '{}'. Type 'help' to see available commands", other.join(" "))),
                 }
             }
         };
@@ -292,6 +299,7 @@ impl App {
             help_handle,
             log_handle: ScrollableList::new(MAX_LOG_RECORDS),
             user_input: UserInput::new(),
+            connection_status: ConnectionStatus::Connected,
         }
     }
 
@@ -303,6 +311,7 @@ impl App {
     ) -> Result<(), Error> {
         let (tx_client, rx_client): (Sender<ClientMessage>, Receiver<ClientMessage>) = channel();
         let (tx_server, rx_server): (Sender<ServerMessage>, Receiver<ServerMessage>) = channel();
+        let (tx_error, rx_error): (Sender<String>, Receiver<String>) = channel();
 
         let mut poll = Poll::new()?;
         let waker = Waker::new(poll.registry(), WAKER)?;
@@ -311,6 +320,7 @@ impl App {
         // non-blocking IO. Some non-blocking IO between client threads is also
         // managed by this thread. The UI thread sends client command messages
         // to this thread; those messages are eventually written to the server.
+        let tx_error_clone = tx_error.clone();
         thread::spawn(move || -> Result<(), Error> {
             let mut events = Events::with_capacity(64);
             let mut messages_to_write: VecDeque<ClientMessage> = VecDeque::new();
@@ -347,6 +357,7 @@ impl App {
                                             | io::ErrorKind::ConnectionReset
                                             | io::ErrorKind::TimedOut
                                             | io::ErrorKind::UnexpectedEof => {
+                                                let _ = tx_error_clone.send(format!("Connection lost: {}", error));
                                                 bail!("connection dropped");
                                             }
                                             // Would block "errors" are the OS's way of saying that the
@@ -394,6 +405,7 @@ impl App {
                                                 | io::ErrorKind::InvalidData
                                                 | io::ErrorKind::TimedOut
                                                 | io::ErrorKind::UnexpectedEof => {
+                                                    let _ = tx_error_clone.send(format!("Connection lost: {}", error));
                                                     bail!("connection dropped");
                                                 }
                                                 // Would block "errors" are the OS's way of saying that the
@@ -479,6 +491,18 @@ impl App {
                     },
                     _ => {}
                 }
+            }
+
+            // Check for connection errors from the network thread
+            if let Ok(error_msg) = rx_error.try_recv() {
+                self.connection_status = ConnectionStatus::Disconnected;
+                let record = Record::new(RecordKind::Error, error_msg.clone());
+                self.log_handle.push(record.into());
+                // Redraw one last time to show the disconnected status
+                terminal.draw(|frame| self.draw(&view, frame))?;
+                // Wait a bit so user can see the status
+                std::thread::sleep(Duration::from_secs(2));
+                return Ok(());
             }
 
             if let Ok(msg) = rx_server.try_recv() {
@@ -716,8 +740,14 @@ impl App {
         ));
 
         // Render user input help message.
+        let status_indicator = match self.connection_status {
+            ConnectionStatus::Connected => "● Connected".green(),
+            ConnectionStatus::Disconnected => "● Disconnected".red(),
+        };
+
         let help_message = vec![
-            "press ".into(),
+            status_indicator,
+            " | press ".into(),
             "Tab".bold().white(),
             " to view help, press ".into(),
             "Enter".bold().white(),
