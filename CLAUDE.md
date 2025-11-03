@@ -168,9 +168,13 @@ Key types in `private_poker/src/game/entities.rs`:
 ## Important Notes
 
 ### Testing
-- Integration tests in `private_poker/tests/client_server.rs` test full client-server interactions
+- Integration tests:
+  - `private_poker/tests/client_server.rs` - Full client-server interactions
+  - `private_poker/tests/game_flow_integration.rs` - Complete game flow testing
+- Property-based tests: `private_poker/tests/hand_evaluation_proptest.rs` uses `proptest` to verify hand evaluation correctness across random inputs
 - Unit tests embedded in source files with `#[cfg(test)]`
 - Use `cargo test` to run all tests
+- Property test regressions stored in `proptest-regressions/` (gitignored)
 
 ### Release Profile
 The workspace uses aggressive size optimizations:
@@ -187,6 +191,7 @@ The workspace uses aggressive size optimizations:
 - `ratatui`: TUI framework (client only)
 - `serde`: Serialization traits
 - `thiserror`: Error type macros
+- `proptest`: Property-based testing framework (dev dependency)
 
 ### Logging
 Server uses `env_logger` controlled by `RUST_LOG` environment variable. Set to `info`, `debug`, or `trace` for different verbosity levels.

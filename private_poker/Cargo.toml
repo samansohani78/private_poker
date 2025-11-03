@@ -19,3 +19,8 @@ thiserror = "1.0.63"
 
 [dev-dependencies]
 proptest = "1.4"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "game_benchmarks"
+harness = false
