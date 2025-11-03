@@ -5,6 +5,7 @@ use std::{
     cmp::{Ordering, max, min},
     collections::{HashMap, HashSet, VecDeque},
     fmt,
+    sync::Arc,
 };
 use thiserror::Error;
 
@@ -297,9 +298,20 @@ pub struct Game<T> {
     pub state: T,
 }
 
+/// Shared read-only data that can be reused across all views
+struct SharedViewData {
+    blinds: Arc<Blinds>,
+    spectators: Arc<HashSet<User>>,
+    waitlist: Arc<VecDeque<User>>,
+    open_seats: Arc<VecDeque<usize>>,
+    board: Arc<Vec<Card>>,
+    pot: Arc<PotView>,
+    play_positions: Arc<PlayPositions>,
+}
+
 /// General game methods that can or will be used at various stages of gameplay.
 impl<T> Game<T> {
-    fn as_view(&self, username: &Username) -> GameView {
+    fn as_view(&self, username: &Username, shared: &SharedViewData) -> GameView {
         let mut players = Vec::with_capacity(self.data.settings.max_players);
         for player in &self.data.players {
             let cards = if &player.user.name == username || player.showing {
@@ -315,16 +327,14 @@ impl<T> Game<T> {
             players.push(player_view);
         }
         GameView {
-            blinds: self.data.blinds.clone(),
-            spectators: self.data.spectators.clone(),
-            waitlist: self.data.waitlist.clone(),
-            open_seats: self.data.open_seats.clone(),
+            blinds: Arc::clone(&shared.blinds),
+            spectators: Arc::clone(&shared.spectators),
+            waitlist: Arc::clone(&shared.waitlist),
+            open_seats: Arc::clone(&shared.open_seats),
             players,
-            board: self.data.board.clone(),
-            pot: PotView {
-                size: self.data.pot.get_size(),
-            },
-            play_positions: self.data.play_positions.clone(),
+            board: Arc::clone(&shared.board),
+            pot: Arc::clone(&shared.pot),
+            play_positions: Arc::clone(&shared.play_positions),
         }
     }
 
@@ -583,6 +593,19 @@ impl<T> GameStateManagement for Game<T> {
     /// only the board is shown until the showdown. For players, only their
     /// hand and the board is shown until the showdown.
     fn get_views(&self) -> GameViews {
+        // Create shared data once - these Arc clones are cheap (just pointer + refcount)
+        let shared = SharedViewData {
+            blinds: Arc::new(self.data.blinds.clone()),
+            spectators: Arc::new(self.data.spectators.clone()),
+            waitlist: Arc::new(self.data.waitlist.clone()),
+            open_seats: Arc::new(self.data.open_seats.clone()),
+            board: Arc::new(self.data.board.clone()),
+            pot: Arc::new(PotView {
+                size: self.data.pot.get_size(),
+            }),
+            play_positions: Arc::new(self.data.play_positions.clone()),
+        };
+
         let mut views = HashMap::with_capacity(self.data.settings.max_users);
         for username in self
             .data
@@ -592,7 +615,7 @@ impl<T> GameStateManagement for Game<T> {
             .chain(self.data.waitlist.iter().map(|u| &u.name))
             .chain(self.data.players.iter().map(|p| &p.user.name))
         {
-            views.insert(username.clone(), self.as_view(username));
+            views.insert(username.clone(), self.as_view(username, &shared));
         }
         views
     }

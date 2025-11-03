@@ -169,7 +169,7 @@ impl Bot {
                         .iter()
                         .find(|p| p.user.name == self.client.username)
                     {
-                        let mut cards = self.view.board.clone();
+                        let mut cards = self.view.board.as_ref().clone();
                         cards.extend(player.cards.clone());
                         functional::prepare_hand(&mut cards);
                         self.hand = functional::eval(&cards);
@@ -237,7 +237,7 @@ impl Bot {
                                 / (self.starting_money as Reward);
                             return Ok((self.hand.clone(), ActionChoices::default(), reward, true));
                         }
-                        let mut cards = self.view.board.clone();
+                        let mut cards = self.view.board.as_ref().clone();
                         cards.extend(player.cards.clone());
                         functional::prepare_hand(&mut cards);
                         self.hand = functional::eval(&cards);

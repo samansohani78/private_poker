@@ -654,7 +654,7 @@ impl App {
                 let hand_repr = if player.cards.is_empty() {
                     String::new()
                 } else {
-                    let mut cards = view.board.clone();
+                    let mut cards = view.board.as_ref().clone();
                     cards.extend(player.cards.clone());
                     functional::prepare_hand(&mut cards);
                     let hand = functional::eval(&cards);

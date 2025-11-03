@@ -6,6 +6,7 @@ use std::{
     fmt::{self},
     hash::{Hash, Hasher},
     mem::discriminant,
+    sync::Arc,
 };
 
 use super::constants;
@@ -599,16 +600,45 @@ impl fmt::Display for PotView {
     }
 }
 
+// Helper module for Arc serialization
+mod arc_serde {
+    use super::*;
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<S, T>(arc: &Arc<T>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: Serialize,
+    {
+        arc.as_ref().serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Arc<T>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: Deserialize<'de>,
+    {
+        T::deserialize(deserializer).map(Arc::new)
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GameView {
-    pub blinds: Blinds,
-    pub spectators: HashSet<User>,
-    pub waitlist: VecDeque<User>,
-    pub open_seats: VecDeque<usize>,
+    #[serde(with = "arc_serde")]
+    pub blinds: Arc<Blinds>,
+    #[serde(with = "arc_serde")]
+    pub spectators: Arc<HashSet<User>>,
+    #[serde(with = "arc_serde")]
+    pub waitlist: Arc<VecDeque<User>>,
+    #[serde(with = "arc_serde")]
+    pub open_seats: Arc<VecDeque<usize>>,
     pub players: Vec<PlayerView>,
-    pub board: Vec<Card>,
-    pub pot: PotView,
-    pub play_positions: PlayPositions,
+    #[serde(with = "arc_serde")]
+    pub board: Arc<Vec<Card>>,
+    #[serde(with = "arc_serde")]
+    pub pot: Arc<PotView>,
+    #[serde(with = "arc_serde")]
+    pub play_positions: Arc<PlayPositions>,
 }
 
 pub type GameViews = HashMap<Username, GameView>;
