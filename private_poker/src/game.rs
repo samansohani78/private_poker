@@ -1152,6 +1152,122 @@ impl Game<TakeAction> {
         Ok(sanitized_action)
     }
 
+    /// Convert a high-level action to a bet struct with the appropriate amount
+    fn convert_action_to_bet(
+        &mut self,
+        action: &Action,
+        player_idx: SeatIndex,
+        player_call: Usd,
+        player_raise: Usd,
+    ) -> Result<Option<Bet>, Action> {
+        let player = &mut self.data.players[player_idx];
+
+        // Handle non-betting actions (check/fold) immediately
+        match action {
+            Action::Check => {
+                self.data.player_counts.num_called += 1;
+                player.state = PlayerState::Check;
+                return Err(action.clone());
+            }
+            Action::Fold => {
+                self.data.player_counts.num_active -= 1;
+                player.state = PlayerState::Fold;
+                return Err(action.clone());
+            }
+            _ => {}
+        }
+
+        // Convert betting actions to Bet struct
+        let mut bet = match action {
+            Action::AllIn => Bet {
+                action: BetAction::AllIn,
+                amount: player.user.money,
+            },
+            Action::Call => Bet {
+                action: BetAction::Call,
+                amount: player_call,
+            },
+            Action::Raise(Some(amount)) => Bet {
+                action: BetAction::Raise,
+                amount: *amount,
+            },
+            Action::Raise(None) => Bet {
+                action: BetAction::Raise,
+                amount: player_raise,
+            },
+            _ => unreachable!("Non-betting actions handled above"),
+        };
+
+        // If bet amount exceeds player's money, convert to all-in
+        if bet.amount >= player.user.money {
+            bet.action = BetAction::AllIn;
+            bet.amount = player.user.money;
+        }
+
+        Ok(Some(bet))
+    }
+
+    /// Validate bet amount and update player/pot state accordingly
+    fn apply_bet(
+        &mut self,
+        bet: &Bet,
+        player_idx: SeatIndex,
+        player_investment: Usd,
+        pot_call: Usd,
+    ) -> Result<(), Bet> {
+        let new_player_investment = player_investment + bet.amount;
+        let player = &mut self.data.players[player_idx];
+
+        // Update player counts and state based on bet action
+        match bet.action {
+            BetAction::AllIn => {
+                self.data.player_counts.num_active -= 1;
+                if new_player_investment > pot_call {
+                    self.data.player_counts.num_called = 0;
+                }
+                player.state = PlayerState::AllIn;
+            }
+            BetAction::Call => {
+                self.data.player_counts.num_called += 1;
+                player.state = PlayerState::Call;
+            }
+            BetAction::Raise => {
+                if new_player_investment < (2 * pot_call) {
+                    return Err(bet.clone());
+                }
+                self.data.player_counts.num_called = 1;
+                player.state = PlayerState::Raise;
+            }
+        }
+
+        // Deduct bet from player's money and add to pot
+        player.user.money -= bet.amount;
+        self.data.pot.bet(player_idx, bet);
+
+        Ok(())
+    }
+
+    /// Reset other players' states to Wait after a raise
+    fn reset_waiting_players(&mut self, current_player_idx: SeatIndex) {
+        if self.data.player_counts.num_called <= 1 {
+            for player in self
+                .data
+                .players
+                .iter_mut()
+                .enumerate()
+                .filter(|(idx, player)| {
+                    matches!(
+                        player.state,
+                        PlayerState::Call | PlayerState::Check | PlayerState::Raise
+                    ) && *idx != current_player_idx
+                })
+                .map(|(_, player)| player)
+            {
+                player.state = PlayerState::Wait;
+            }
+        }
+    }
+
     fn affect(&mut self, action: Action) -> Result<Action, UserError> {
         match (
             self.data.play_positions.next_action_idx,
@@ -1161,91 +1277,28 @@ impl Game<TakeAction> {
                 if !action_choices.contains(&action) {
                     return Err(UserError::InvalidAction);
                 }
-                let player = &mut self.data.players[player_idx];
+
                 let pot_call = self.data.pot.get_call();
                 let player_investment = self.data.pot.get_investment_by_player_idx(player_idx);
                 let player_call = pot_call - player_investment;
                 let player_raise = 2 * pot_call - player_investment;
-                // Convert the action to a valid bet. Sanitize the bet amount according
-                // to the player's intended action.
-                let mut bet = match action {
-                    Action::AllIn => Bet {
-                        action: BetAction::AllIn,
-                        amount: player.user.money,
-                    },
-                    Action::Call => Bet {
-                        action: BetAction::Call,
-                        amount: player_call,
-                    },
-                    Action::Check => {
-                        self.data.player_counts.num_called += 1;
-                        player.state = PlayerState::Check;
-                        return Ok(action);
-                    }
-                    Action::Fold => {
-                        self.data.player_counts.num_active -= 1;
-                        player.state = PlayerState::Fold;
-                        return Ok(action);
-                    }
-                    Action::Raise(Some(amount)) => Bet {
-                        action: BetAction::Raise,
-                        amount,
-                    },
-                    Action::Raise(None) => Bet {
-                        action: BetAction::Raise,
-                        amount: player_raise,
-                    },
+
+                // Convert action to bet (or handle check/fold immediately)
+                let bet = match self.convert_action_to_bet(&action, player_idx, player_call, player_raise) {
+                    Ok(Some(bet)) => bet,
+                    Ok(None) => unreachable!(),
+                    Err(handled_action) => return Ok(handled_action), // Check or Fold handled
                 };
-                if bet.amount >= player.user.money {
-                    bet.action = BetAction::AllIn;
-                    bet.amount = player.user.money;
-                }
-                // Do some additional bet validation based on the bet's amount.
-                let new_player_investment = player_investment + bet.amount;
-                match bet.action {
-                    BetAction::AllIn => {
-                        self.data.player_counts.num_active -= 1;
-                        if new_player_investment > pot_call {
-                            self.data.player_counts.num_called = 0;
-                        }
-                        player.state = PlayerState::AllIn;
-                    }
-                    BetAction::Call => {
-                        self.data.player_counts.num_called += 1;
-                        player.state = PlayerState::Call;
-                    }
-                    BetAction::Raise => {
-                        if new_player_investment < (2 * pot_call) {
-                            return Err(UserError::InvalidBet { bet });
-                        }
-                        self.data.player_counts.num_called = 1;
-                        player.state = PlayerState::Raise;
-                    }
-                }
-                // The player's bet is OK. Remove the bet amount from the player's
-                // stack and start distributing it appropriately amongst all the pots.
-                player.user.money -= bet.amount;
-                self.data.pot.bet(player_idx, &bet);
 
-                // Reset other player states that're still in the hand based on the bet.
-                if self.data.player_counts.num_called <= 1 {
-                    for player in self
-                        .data
-                        .players
-                        .iter_mut()
-                        .enumerate()
-                        .filter(|(idx, player)| {
-                            matches!(player.state,
-                            PlayerState::Call | PlayerState::Check | PlayerState::Raise
-                                if *idx != player_idx)
-                        })
-                        .map(|(_, player)| player)
-                    {
-                        player.state = PlayerState::Wait;
-                    }
+                // Apply the bet and update game state
+                if let Err(invalid_bet) = self.apply_bet(&bet, player_idx, player_investment, pot_call) {
+                    return Err(UserError::InvalidBet { bet: invalid_bet });
                 }
 
-                // Return the santized action.
+                // Reset other players' states if needed
+                self.reset_waiting_players(player_idx);
+
+                // Return the sanitized action
                 Ok(bet.into())
             }
             _ => Err(UserError::OutOfTurnAction),
