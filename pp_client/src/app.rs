@@ -556,24 +556,8 @@ impl App {
         }
     }
 
-    fn draw(&mut self, view: &GameView, frame: &mut Frame) {
-        let window = Layout::vertical([
-            Constraint::Min(6),
-            Constraint::Length(3),
-            Constraint::Length(1),
-        ]);
-        let [top_area, user_input_area, help_area] = window.areas(frame.area());
-        let [view_area, log_area] =
-            Layout::vertical([Constraint::Percentage(55), Constraint::Percentage(45)])
-                .areas(top_area);
-        let [lobby_area, table_area] =
-            Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)])
-                .areas(view_area);
-        let [spectator_area, waitlister_area] =
-            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .areas(lobby_area);
-
-        // Render spectators area.
+    /// Render the spectators table
+    fn draw_spectators(&self, view: &GameView, frame: &mut Frame, area: ratatui::layout::Rect) {
         let mut spectators = Vec::from_iter(view.spectators.iter());
         spectators.sort_unstable();
         let spectators = Table::new(
@@ -587,9 +571,11 @@ impl App {
                 .padding(Padding::uniform(1))
                 .title(" spectators  "),
         );
-        frame.render_widget(spectators, spectator_area);
+        frame.render_widget(spectators, area);
+    }
 
-        // Render waitlisters area.
+    /// Render the waitlist table
+    fn draw_waitlist(&self, view: &GameView, frame: &mut Frame, area: ratatui::layout::Rect) {
         let waitlisters = Table::new(
             view.waitlist
                 .iter()
@@ -601,75 +587,70 @@ impl App {
                 .padding(Padding::uniform(1))
                 .title(" waitlisters  "),
         );
-        frame.render_widget(waitlisters, waitlister_area);
+        frame.render_widget(waitlisters, area);
+    }
 
-        // Render table area.
+    /// Create a table row for a single player
+    fn make_player_row<'a>(&self, view: &'a GameView, player_idx: usize) -> Row<'a> {
+        let player = &view.players[player_idx];
+
+        // Indicator if it's the player's move
+        let move_repr = if view.play_positions.next_action_idx == Some(player_idx) {
+            "→"
+        } else {
+            ""
+        };
+
+        // Indicator for blind position
+        let button_repr = match player_idx {
+            idx if idx == view.play_positions.big_blind_idx => "BB",
+            idx if idx == view.play_positions.small_blind_idx => "SB",
+            _ => "",
+        };
+
+        // Build the row cells
+        let mut row = vec![
+            Cell::new(Text::from(move_repr).alignment(Alignment::Center)),
+            Cell::new(Text::from(button_repr).alignment(Alignment::Left)),
+            Cell::new(Text::from(player.user.name.to_string()).alignment(Alignment::Left)),
+            Cell::new(Text::from(format!("${}", player.user.money)).alignment(Alignment::Right)),
+            Cell::new(Text::from(player.state.to_string()).alignment(Alignment::Center)),
+        ];
+
+        // Add player cards
+        for card_idx in 0..2 {
+            let card_repr = player
+                .cards
+                .get(card_idx)
+                .map_or_else(|| "".into(), make_card_span);
+            row.push(Cell::new(Text::from(card_repr).alignment(Alignment::Right)));
+        }
+
+        // Add player's best hand
+        let hand_repr = if !player.cards.is_empty() {
+            let mut cards = view.board.as_ref().clone();
+            cards.extend(player.cards.clone());
+            functional::prepare_hand(&mut cards);
+            let hand = functional::eval(&cards);
+            hand.first()
+                .map_or_else(String::new, |subhand| format!("({})", subhand.rank))
+        } else {
+            String::new()
+        };
+        row.push(Cell::new(Text::from(hand_repr).alignment(Alignment::Right)));
+
+        // Highlight current player
+        let mut row = Row::new(row);
+        if self.username == player.user.name {
+            row = row.bold().white();
+        }
+        row
+    }
+
+    /// Render the main game table with players
+    fn draw_table(&self, view: &GameView, frame: &mut Frame, area: ratatui::layout::Rect) {
         let table = Table::new(
-            view.players.iter().enumerate().map(|(player_idx, player)| {
-                // Indicator if it's the player's move.
-                let move_repr = if let Some(next_action_idx) = view.play_positions.next_action_idx
-                    && player_idx == next_action_idx
-                {
-                    "→"
-                } else {
-                    ""
-                };
-
-                // Indicator for what blind each player pays.
-                let button_repr = match player_idx {
-                    idx if idx == view.play_positions.big_blind_idx => "BB",
-                    idx if idx == view.play_positions.small_blind_idx => "SB",
-                    _ => "",
-                };
-
-                // Username column.
-                let username_repr = player.user.name.to_string();
-
-                // Money column.
-                let money_repr = format!("${}", player.user.money);
-
-                // State column.
-                let state_repr = player.state.to_string();
-
-                // This is the final row representation for the table entry.
-                let mut row = vec![
-                    Cell::new(Text::from(move_repr).alignment(Alignment::Center)),
-                    Cell::new(Text::from(button_repr).alignment(Alignment::Left)),
-                    Cell::new(Text::from(username_repr).alignment(Alignment::Left)),
-                    Cell::new(Text::from(money_repr).alignment(Alignment::Right)),
-                    Cell::new(Text::from(state_repr).alignment(Alignment::Center)),
-                ];
-
-                // Player cards styled according to suit.
-                for card_idx in 0..2 {
-                    let card_repr = player
-                        .cards
-                        .get(card_idx)
-                        .map_or_else(|| "".into(), make_card_span);
-                    let card_cell = Cell::new(Text::from(card_repr).alignment(Alignment::Right));
-                    row.push(card_cell);
-                }
-
-                // Player's highest subhand displayed.
-                let hand_repr = if player.cards.is_empty() {
-                    String::new()
-                } else {
-                    let mut cards = view.board.as_ref().clone();
-                    cards.extend(player.cards.clone());
-                    functional::prepare_hand(&mut cards);
-                    let hand = functional::eval(&cards);
-                    hand.first()
-                        .map_or_else(String::new, |subhand| format!("({})", subhand.rank))
-                };
-                let hand_cell = Cell::new(Text::from(hand_repr).alignment(Alignment::Right));
-                row.push(hand_cell);
-
-                let mut row = Row::new(row);
-                if self.username == player.user.name {
-                    row = row.bold().white();
-                }
-                row
-            }),
+            (0..view.players.len()).map(|idx| self.make_player_row(view, idx)),
             [
                 Constraint::Max(3),
                 Constraint::Fill(1),
@@ -700,14 +681,16 @@ impl App {
                         .alignment(Alignment::Left),
                 ),
         );
-        frame.render_widget(table, table_area);
+        frame.render_widget(table, area);
+    }
 
-        // Render log window.
+    /// Render the log/history window with scrollbar
+    fn draw_log(&mut self, frame: &mut Frame, area: ratatui::layout::Rect) {
         let log_records = self.log_handle.list_items.clone();
         let log_records = List::new(log_records)
             .direction(ListDirection::BottomToTop)
             .block(block::Block::bordered().title(" history  "));
-        frame.render_stateful_widget(log_records, log_area, &mut self.log_handle.list_state);
+        frame.render_stateful_widget(log_records, area, &mut self.log_handle.list_state);
 
         // Render log window scrollbar.
         frame.render_stateful_widget(
@@ -715,14 +698,16 @@ impl App {
                 .symbols(scrollbar::VERTICAL)
                 .begin_symbol(None)
                 .end_symbol(None),
-            log_area.inner(Margin {
+            area.inner(Margin {
                 vertical: 1,
                 horizontal: 1,
             }),
             &mut self.log_handle.scroll_state,
         );
+    }
 
-        // Render user input area.
+    /// Render the user input area
+    fn draw_user_input(&self, frame: &mut Frame, area: ratatui::layout::Rect) {
         let username = self.username.clone();
         let user_input = Paragraph::new(self.user_input.value.as_str())
             .style(Style::default())
@@ -730,16 +715,18 @@ impl App {
                 block::Block::bordered()
                     .title(format!(" {username}@{}  ", self.addr).light_green()),
             );
-        frame.render_widget(user_input, user_input_area);
+        frame.render_widget(user_input, area);
         frame.set_cursor_position(Position::new(
             // Draw the cursor at the current position in the input field.
             // This position is can be controlled via the left and right arrow key
-            user_input_area.x + self.user_input.char_idx as u16 + 1,
+            area.x + self.user_input.char_idx as u16 + 1,
             // Move one line down, from the border to the input line
-            user_input_area.y + 1,
+            area.y + 1,
         ));
+    }
 
-        // Render user input help message.
+    /// Render the help/status bar at the bottom
+    fn draw_help_bar(&self, frame: &mut Frame, area: ratatui::layout::Rect) {
         let status_indicator = match self.connection_status {
             ConnectionStatus::Connected => "● Connected".green(),
             ConnectionStatus::Disconnected => "● Disconnected".red(),
@@ -756,39 +743,78 @@ impl App {
             " to exit".into(),
         ];
         let help_message = Paragraph::new(Line::from(help_message));
-        frame.render_widget(help_message, help_area);
+        frame.render_widget(help_message, area);
+    }
 
-        // Render the help menu.
+    /// Render the help menu overlay
+    fn draw_help_menu(&mut self, frame: &mut Frame) {
+        let vertical = Layout::vertical([Constraint::Max(29)]).flex(Flex::Center);
+        let horizontal = Layout::horizontal([Constraint::Max(92)]).flex(Flex::Center);
+        let [help_menu_area] = vertical.areas(frame.area());
+        let [help_menu_area] = horizontal.areas(help_menu_area);
+        frame.render_widget(Clear, help_menu_area); // clears out the background
+
+        // Render help text.
+        let help_items = self.help_handle.list_items.clone();
+        let help_items = List::new(help_items)
+            .direction(ListDirection::BottomToTop)
+            .block(block::Block::bordered().title(" commands  "));
+        frame.render_stateful_widget(
+            help_items,
+            help_menu_area,
+            &mut self.help_handle.list_state,
+        );
+
+        // Render help scrollbar.
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .symbols(scrollbar::VERTICAL)
+                .begin_symbol(None)
+                .end_symbol(None),
+            help_menu_area.inner(Margin {
+                vertical: 1,
+                horizontal: 1,
+            }),
+            &mut self.help_handle.scroll_state,
+        );
+    }
+
+    /// Main draw function - orchestrates rendering of all UI components
+    fn draw(&mut self, view: &GameView, frame: &mut Frame) {
+        // Define the main layout structure
+        let window = Layout::vertical([
+            Constraint::Min(6),      // Top area (view + log)
+            Constraint::Length(3),   // User input area
+            Constraint::Length(1),   // Help bar
+        ]);
+        let [top_area, user_input_area, help_area] = window.areas(frame.area());
+
+        // Split top area into view and log
+        let [view_area, log_area] =
+            Layout::vertical([Constraint::Percentage(55), Constraint::Percentage(45)])
+                .areas(top_area);
+
+        // Split view area into lobby and table
+        let [lobby_area, table_area] =
+            Layout::horizontal([Constraint::Percentage(40), Constraint::Percentage(60)])
+                .areas(view_area);
+
+        // Split lobby into spectators and waitlisters
+        let [spectator_area, waitlister_area] =
+            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .areas(lobby_area);
+
+        // Render all components
+        self.draw_spectators(view, frame, spectator_area);
+        self.draw_waitlist(view, frame, waitlister_area);
+        self.draw_table(view, frame, table_area);
+        self.draw_log(frame, log_area);
+        self.draw_user_input(frame, user_input_area);
+        self.draw_help_bar(frame, help_area);
+
+        // Render help menu overlay if active
         if self.show_help_menu {
-            let vertical = Layout::vertical([Constraint::Max(29)]).flex(Flex::Center);
-            let horizontal = Layout::horizontal([Constraint::Max(92)]).flex(Flex::Center);
-            let [help_menu_area] = vertical.areas(frame.area());
-            let [help_menu_area] = horizontal.areas(help_menu_area);
-            frame.render_widget(Clear, help_menu_area); // clears out the background
-
-            // Render help text.
-            let help_items = self.help_handle.list_items.clone();
-            let help_items = List::new(help_items)
-                .direction(ListDirection::BottomToTop)
-                .block(block::Block::bordered().title(" commands  "));
-            frame.render_stateful_widget(
-                help_items,
-                help_menu_area,
-                &mut self.help_handle.list_state,
-            );
-
-            // Render help scrollbar.
-            frame.render_stateful_widget(
-                Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                    .symbols(scrollbar::VERTICAL)
-                    .begin_symbol(None)
-                    .end_symbol(None),
-                help_menu_area.inner(Margin {
-                    vertical: 1,
-                    horizontal: 1,
-                }),
-                &mut self.help_handle.scroll_state,
-            );
+            self.draw_help_menu(frame);
         }
     }
 }
