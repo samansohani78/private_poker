@@ -582,7 +582,7 @@ impl fmt::Display for Vote {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PlayerView {
     pub user: User,
     pub state: PlayerState,

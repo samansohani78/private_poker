@@ -312,20 +312,25 @@ struct SharedViewData {
 /// General game methods that can or will be used at various stages of gameplay.
 impl<T> Game<T> {
     fn as_view(&self, username: &Username, shared: &SharedViewData) -> GameView {
-        let mut players = Vec::with_capacity(self.data.settings.max_players);
-        for player in &self.data.players {
-            let cards = if &player.user.name == username || player.showing {
-                player.cards.clone()
-            } else {
-                vec![]
-            };
-            let player_view = PlayerView {
-                user: player.user.clone(),
-                state: player.state.clone(),
-                cards,
-            };
-            players.push(player_view);
-        }
+        // Use iterator and collect for more efficient vector building
+        let players: Vec<PlayerView> = self
+            .data
+            .players
+            .iter()
+            .map(|player| {
+                let cards = if &player.user.name == username || player.showing {
+                    player.cards.clone()
+                } else {
+                    Vec::new()
+                };
+                PlayerView {
+                    user: player.user.clone(),
+                    state: player.state.clone(),
+                    cards,
+                }
+            })
+            .collect();
+
         GameView {
             blinds: Arc::clone(&shared.blinds),
             spectators: Arc::clone(&shared.spectators),
