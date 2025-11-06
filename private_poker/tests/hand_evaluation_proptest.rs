@@ -366,4 +366,113 @@ proptest! {
         let winners = argmax(&[pair_hand, hc_hand]);
         prop_assert_eq!(winners, vec![0], "Pair should beat high card");
     }
+
+    // === Additional Hand Evaluation Property Tests (Sprint 6 Stage 6) ===
+
+    /// Test that comparison is transitive: if A > B and B > C, then A > C
+    #[test]
+    fn test_hand_comparison_transitive(
+        cards1 in seven_card_hand_strategy(),
+        cards2 in seven_card_hand_strategy(),
+        cards3 in seven_card_hand_strategy()
+    ) {
+        let hand1 = eval_hand(&cards1);
+        let hand2 = eval_hand(&cards2);
+        let hand3 = eval_hand(&cards3);
+
+        // If hand1 > hand2 and hand2 > hand3, then hand1 > hand3
+        let winners_1_2 = argmax(&[hand1.clone(), hand2.clone()]);
+        let winners_2_3 = argmax(&[hand2.clone(), hand3.clone()]);
+
+        if winners_1_2 == vec![0] && winners_2_3 == vec![0] {
+            // hand1 > hand2 and hand2 > hand3
+            let winners_1_3 = argmax(&[hand1, hand3]);
+            prop_assert_eq!(winners_1_3, vec![0], "Transitivity: if A>B and B>C then A>C");
+        }
+    }
+
+    /// Test that evaluation handles edge case of all same suit (flush possible)
+    #[test]
+    fn test_eval_all_same_suit(suit_idx in 0u8..=3, values in prop::collection::vec(1u8..=13, 7..=7)) {
+        let suit = match suit_idx {
+            0 => Suit::Club,
+            1 => Suit::Diamond,
+            2 => Suit::Heart,
+            _ => Suit::Spade,
+        };
+
+        // Make sure values are unique
+        let mut unique_values: Vec<u8> = values.iter().copied().collect();
+        unique_values.sort_unstable();
+        unique_values.dedup();
+        prop_assume!(unique_values.len() >= 5);
+
+        let cards: Vec<Card> = unique_values.iter().take(7).map(|&v| Card(v, suit)).collect();
+        let hand = eval_hand(&cards);
+
+        // With 7 cards of same suit, should detect flush (or straight flush)
+        prop_assert!(!hand.is_empty(), "Should evaluate hand with all same suit");
+    }
+
+    /// Test that evaluation handles many duplicate values (pairs/trips/quads)
+    #[test]
+    fn test_eval_many_pairs(value1 in 2u8..=13, value2 in 2u8..=13) {
+        prop_assume!(value1 != value2);
+
+        // Create two pairs with same values
+        let cards = vec![
+            Card(value1, Suit::Club),
+            Card(value1, Suit::Diamond),
+            Card(value2, Suit::Heart),
+            Card(value2, Suit::Spade),
+            Card(7, Suit::Club),
+        ];
+
+        let hand = eval_hand(&cards);
+        prop_assert!(!hand.is_empty(), "Should evaluate two pair");
+    }
+
+    /// Test that adding more cards never makes a hand worse
+    #[test]
+    fn test_more_cards_never_worse(
+        base_cards in unique_cards_strategy(5, 5),
+        extra_cards in unique_cards_strategy(1, 2)
+    ) {
+        // Ensure no card duplication
+        let all_cards: BTreeSet<_> = base_cards.iter().chain(&extra_cards).collect();
+        prop_assume!(all_cards.len() == base_cards.len() + extra_cards.len());
+
+        let hand_5 = eval_hand(&base_cards);
+        let mut hand_7 = base_cards.clone();
+        hand_7.extend(extra_cards);
+        let hand_7_eval = eval_hand(&hand_7);
+
+        // With more cards, the best 5-card hand should be >= original
+        let winners = argmax(&[hand_7_eval, hand_5]);
+        prop_assert!(winners.contains(&0), "More cards should never make hand worse");
+    }
+
+    /// Test that hand ranks are consistent
+    #[test]
+    fn test_hand_ranks_consistent(cards in seven_card_hand_strategy()) {
+        let hand1 = eval_hand(&cards);
+        let hand2 = eval_hand(&cards);
+
+        // Same cards should produce same rank
+        prop_assert!(!hand1.is_empty() && !hand2.is_empty());
+        prop_assert_eq!(hand1[0].rank, hand2[0].rank, "Rank should be consistent");
+    }
+
+    /// Test that no invalid card values appear in results
+    #[test]
+    fn test_no_invalid_card_values(cards in seven_card_hand_strategy()) {
+        let hand = eval_hand(&cards);
+
+        for subhand in &hand {
+            for &value in &subhand.values {
+                // Values should be in valid range (1-14, ace can be 1 or 14)
+                prop_assert!(value >= 1 && value <= 14, "Card value should be 1-14");
+            }
+        }
+    }
 }

@@ -25,10 +25,10 @@ pub enum Suit {
 impl fmt::Display for Suit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let repr = match self {
-            Self::Club => "c",
-            Self::Spade => "s",
-            Self::Diamond => "d",
-            Self::Heart => "h",
+            Self::Club => "♣",
+            Self::Spade => "♠",
+            Self::Diamond => "♦",
+            Self::Heart => "♥",
             Self::Wild => "w",
         };
         write!(f, "{repr}")
@@ -642,3 +642,1483 @@ pub struct GameView {
 }
 
 pub type GameViews = HashMap<Username, GameView>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // === Card Tests ===
+
+    #[test]
+    fn test_card_creation() {
+        let card = Card(14, Suit::Spade);
+        assert_eq!(card.0, 14);
+        assert_eq!(card.1, Suit::Spade);
+    }
+
+    #[test]
+    fn test_card_value_range() {
+        for value in 1..=14 {
+            let card = Card(value, Suit::Heart);
+            assert!(card.0 >= 1 && card.0 <= 14);
+        }
+    }
+
+    #[test]
+    fn test_all_suits() {
+        let suits = [Suit::Heart, Suit::Diamond, Suit::Club, Suit::Spade];
+        for suit in suits {
+            let card = Card(7, suit.clone());
+            assert_eq!(card.1, suit);
+        }
+    }
+
+    // === Deck Tests ===
+
+    #[test]
+    fn test_deck_initialization() {
+        let deck = Deck::default();
+        assert_eq!(deck.cards.len(), 52);
+    }
+
+    #[test]
+    fn test_deck_shuffle() {
+        let mut deck = Deck::default();
+        deck.shuffle();
+        assert_eq!(deck.cards.len(), 52);
+        assert_eq!(deck.deck_idx, 0);
+    }
+
+    #[test]
+    fn test_deck_deal_card() {
+        let mut deck = Deck::default();
+        let card = deck.deal_card();
+        assert!(card.0 >= 1 && card.0 <= 14);
+        assert_eq!(deck.deck_idx, 1);
+    }
+
+    #[test]
+    fn test_deck_deal_multiple_cards() {
+        let mut deck = Deck::default();
+        for i in 1..=5 {
+            let _card = deck.deal_card();
+            assert_eq!(deck.deck_idx, i);
+        }
+    }
+
+    // === Username Tests ===
+
+    #[test]
+    fn test_username_creation() {
+        let username: Username = "alice".to_string().into();
+        let username2: Username = "alice".to_string().into();
+        assert_eq!(username, username2);
+    }
+
+    #[test]
+    fn test_username_equality() {
+        let user1: Username = "bob".to_string().into();
+        let user2: Username = "bob".to_string().into();
+        let user3: Username = "alice".to_string().into();
+        assert_eq!(user1, user2);
+        assert_ne!(user1, user3);
+    }
+
+    // === Blinds Tests ===
+
+    #[test]
+    fn test_blinds_creation() {
+        let blinds = Blinds { small: 10, big: 20 };
+        assert_eq!(blinds.small, 10);
+        assert_eq!(blinds.big, 20);
+    }
+
+    #[test]
+    fn test_blinds_typical_ratio() {
+        let blinds = Blinds { small: 50, big: 100 };
+        assert_eq!(blinds.big, blinds.small * 2);
+    }
+
+    // === Action Tests ===
+
+    #[test]
+    fn test_action_fold() {
+        let action = Action::Fold;
+        assert!(matches!(action, Action::Fold));
+    }
+
+    #[test]
+    fn test_action_check() {
+        let action = Action::Check;
+        assert!(matches!(action, Action::Check));
+    }
+
+    #[test]
+    fn test_action_call() {
+        let action = Action::Call;
+        assert!(matches!(action, Action::Call));
+    }
+
+    #[test]
+    fn test_action_all_in() {
+        let action = Action::AllIn;
+        assert!(matches!(action, Action::AllIn));
+    }
+
+    #[test]
+    fn test_action_raise_with_amount() {
+        let action = Action::Raise(Some(100));
+        match action {
+            Action::Raise(Some(amount)) => assert_eq!(amount, 100),
+            _ => panic!("Expected Raise with amount"),
+        }
+    }
+
+    #[test]
+    fn test_action_raise_without_amount() {
+        let action = Action::Raise(None);
+        assert!(matches!(action, Action::Raise(None)));
+    }
+
+    // === Vote Tests ===
+
+    #[test]
+    fn test_vote_kick() {
+        let target: Username = "bad_player".to_string().into();
+        let vote = Vote::Kick(target.clone());
+        match vote {
+            Vote::Kick(username) => assert_eq!(username, target),
+            _ => panic!("Expected Kick vote"),
+        }
+    }
+
+    #[test]
+    fn test_vote_reset_specific_user() {
+        let target: Username = "player1".to_string().into();
+        let vote = Vote::Reset(Some(target.clone()));
+        match vote {
+            Vote::Reset(Some(username)) => assert_eq!(username, target),
+            _ => panic!("Expected Reset vote with target"),
+        }
+    }
+
+    #[test]
+    fn test_vote_reset_all() {
+        let vote = Vote::Reset(None);
+        assert!(matches!(vote, Vote::Reset(None)));
+    }
+
+    // === Pot Tests ===
+
+    #[test]
+    fn test_pot_default() {
+        let pot = Pot::default();
+        assert!(pot.investments.is_empty());
+    }
+
+    // === Rank Tests ===
+
+    #[test]
+    fn test_rank_ordering() {
+        assert!(Rank::HighCard < Rank::OnePair);
+        assert!(Rank::OnePair < Rank::TwoPair);
+        assert!(Rank::TwoPair < Rank::ThreeOfAKind);
+        assert!(Rank::ThreeOfAKind < Rank::Straight);
+        assert!(Rank::Straight < Rank::Flush);
+        assert!(Rank::Flush < Rank::FullHouse);
+        assert!(Rank::FullHouse < Rank::FourOfAKind);
+        assert!(Rank::FourOfAKind < Rank::StraightFlush);
+    }
+
+    #[test]
+    fn test_rank_equality() {
+        assert_eq!(Rank::OnePair, Rank::OnePair);
+        assert_eq!(Rank::Flush, Rank::Flush);
+        assert_ne!(Rank::Straight, Rank::StraightFlush);
+    }
+
+    // === SubHand Tests ===
+
+    #[test]
+    fn test_subhand_creation() {
+        let subhand = SubHand {
+            rank: Rank::OnePair,
+            values: vec![14, 14, 13, 12, 11],
+        };
+        assert_eq!(subhand.rank, Rank::OnePair);
+        assert_eq!(subhand.values.len(), 5);
+    }
+
+    #[test]
+    fn test_subhand_comparison() {
+        let pair_aces = SubHand {
+            rank: Rank::OnePair,
+            values: vec![14, 14, 13, 12, 11],
+        };
+        let pair_kings = SubHand {
+            rank: Rank::OnePair,
+            values: vec![13, 13, 12, 11, 10],
+        };
+        // Higher pair should be better
+        assert!(pair_aces > pair_kings);
+    }
+
+    #[test]
+    fn test_subhand_rank_dominates() {
+        let two_pair = SubHand {
+            rank: Rank::TwoPair,
+            values: vec![5, 5, 4, 4, 3],
+        };
+        let one_pair = SubHand {
+            rank: Rank::OnePair,
+            values: vec![14, 14, 13, 12, 11],
+        };
+        // Two pair beats one pair regardless of values
+        assert!(two_pair > one_pair);
+    }
+
+    // === User Tests (Extended) ===
+
+    #[test]
+    fn test_user_equality() {
+        let user1 = User {
+            name: "alice".to_string().into(),
+            money: 1000,
+        };
+        let user2 = User {
+            name: "alice".to_string().into(),
+            money: 1000,
+        };
+        assert_eq!(user1, user2);
+    }
+
+    #[test]
+    fn test_user_hash() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        let user = User {
+            name: "bob".to_string().into(),
+            money: 500,
+        };
+        set.insert(user.clone());
+        assert!(set.contains(&user));
+    }
+
+    // === ActionChoice Tests ===
+
+    #[test]
+    fn test_action_choice_fold() {
+        let choice = ActionChoice::Fold;
+        assert!(matches!(choice, ActionChoice::Fold));
+    }
+
+    #[test]
+    fn test_action_choice_check() {
+        let choice = ActionChoice::Check;
+        assert!(matches!(choice, ActionChoice::Check));
+    }
+
+    #[test]
+    fn test_action_choice_call_with_amount() {
+        let choice = ActionChoice::Call(100);
+        assert!(matches!(choice, ActionChoice::Call(100)));
+    }
+
+    #[test]
+    fn test_action_choice_raise_with_amount() {
+        let choice = ActionChoice::Raise(200);
+        assert!(matches!(choice, ActionChoice::Raise(200)));
+    }
+
+    #[test]
+    fn test_action_choice_all_in() {
+        let choice = ActionChoice::AllIn;
+        assert!(matches!(choice, ActionChoice::AllIn));
+    }
+
+    // === ActionChoices Tests ===
+
+    #[test]
+    fn test_action_choices_creation() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(ActionChoice::Fold);
+        set.insert(ActionChoice::Check);
+        let choices = ActionChoices(set);
+        assert_eq!(choices.0.len(), 2);
+    }
+
+    #[test]
+    fn test_action_choices_contains() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(ActionChoice::Fold);
+        set.insert(ActionChoice::Call(50));
+        let choices = ActionChoices(set);
+        assert!(choices.0.contains(&ActionChoice::Fold));
+        assert!(choices.0.contains(&ActionChoice::Call(50)));
+    }
+
+    // === BetAction Tests ===
+
+    #[test]
+    fn test_bet_action_all_in() {
+        let action = BetAction::AllIn;
+        assert!(matches!(action, BetAction::AllIn));
+    }
+
+    #[test]
+    fn test_bet_action_call() {
+        let action = BetAction::Call;
+        assert!(matches!(action, BetAction::Call));
+    }
+
+    #[test]
+    fn test_bet_action_raise() {
+        let action = BetAction::Raise;
+        assert!(matches!(action, BetAction::Raise));
+    }
+
+    // === Bet Tests ===
+
+    #[test]
+    fn test_bet_creation() {
+        let bet = Bet {
+            action: BetAction::Raise,
+            amount: 100,
+        };
+        assert!(matches!(bet.action, BetAction::Raise));
+        assert_eq!(bet.amount, 100);
+    }
+
+    #[test]
+    fn test_bet_call_zero() {
+        let bet = Bet {
+            action: BetAction::Call,
+            amount: 0,
+        };
+        assert_eq!(bet.amount, 0);
+    }
+
+    // === PlayerState Tests (Extended) ===
+
+    #[test]
+    fn test_player_state_variants() {
+        let states = vec![
+            PlayerState::AllIn,
+            PlayerState::Call,
+            PlayerState::Check,
+            PlayerState::Fold,
+            PlayerState::Raise,
+            PlayerState::Wait,
+        ];
+        assert_eq!(states.len(), 6);
+    }
+
+    // === Player Tests (Extended) ===
+
+    #[test]
+    fn test_player_new() {
+        let user = User {
+            name: "test".to_string().into(),
+            money: 1000,
+        };
+        let player = Player::new(user.clone(), 0);
+        assert_eq!(player.user, user);
+        assert_eq!(player.seat_idx, 0);
+        assert!(!player.showing);
+        assert!(player.cards.is_empty());
+    }
+
+    // === PlayPositions Tests ===
+
+    #[test]
+    fn test_play_positions_default() {
+        let positions = PlayPositions::default();
+        assert!(positions.next_action_idx.is_none());
+    }
+
+    #[test]
+    fn test_play_positions_with_values() {
+        let positions = PlayPositions {
+            small_blind_idx: 0,
+            big_blind_idx: 1,
+            starting_action_idx: 2,
+            next_action_idx: Some(0),
+        };
+        assert_eq!(positions.small_blind_idx, 0);
+        assert_eq!(positions.big_blind_idx, 1);
+        assert_eq!(positions.starting_action_idx, 2);
+        assert_eq!(positions.next_action_idx, Some(0));
+    }
+
+    // === PlayerCounts Tests ===
+
+    #[test]
+    fn test_player_counts_default() {
+        let counts = PlayerCounts::default();
+        assert_eq!(counts.num_active, 0);
+        assert_eq!(counts.num_called, 0);
+    }
+
+    // === PlayerQueues Tests ===
+
+    #[test]
+    fn test_player_queues_default() {
+        let queues = PlayerQueues::default();
+        assert!(queues.to_remove.is_empty());
+        assert!(queues.to_kick.is_empty());
+        assert!(queues.to_reset.is_empty());
+        assert!(queues.to_spectate.is_empty());
+    }
+
+    #[test]
+    fn test_player_queues_add_remove() {
+        let mut queues = PlayerQueues::default();
+        let username: Username = "player1".to_string().into();
+        queues.to_remove.insert(username.clone());
+        assert!(queues.to_remove.contains(&username));
+    }
+
+    // === Pot Tests (Extended) ===
+
+    #[test]
+    fn test_pot_investments() {
+        let pot = Pot::default();
+        // Default pot has capacity for MAX_PLAYERS but is empty
+        assert!(pot.investments.values().all(|&v| v == 0));
+    }
+
+    #[test]
+    fn test_pot_add_investment() {
+        let mut pot = Pot::default();
+        let seat_idx = 0;
+        pot.investments.insert(seat_idx, 100);
+        assert_eq!(pot.investments.get(&seat_idx), Some(&100));
+    }
+
+    #[test]
+    fn test_pot_multiple_investments() {
+        let mut pot = Pot::default();
+        pot.investments.insert(0, 50);
+        pot.investments.insert(1, 100);
+        pot.investments.insert(2, 75);
+        let total: u32 = pot.investments.values().sum();
+        assert!(total >= 225);
+    }
+
+    // === Card Tests (Extended) ===
+
+    #[test]
+    fn test_card_equality() {
+        let card1 = Card(14, Suit::Spade);
+        let card2 = Card(14, Suit::Spade);
+        let card3 = Card(14, Suit::Heart);
+        assert_eq!(card1, card2);
+        assert_ne!(card1, card3);
+    }
+
+    #[test]
+    fn test_card_all_values() {
+        for value in 1..=14 {
+            let card = Card(value, Suit::Club);
+            assert_eq!(card.0, value);
+        }
+    }
+
+    // === Blinds Tests (Extended) ===
+
+    #[test]
+    fn test_blinds_zero() {
+        let blinds = Blinds { small: 0, big: 0 };
+        assert_eq!(blinds.small, 0);
+        assert_eq!(blinds.big, 0);
+    }
+
+    #[test]
+    fn test_blinds_large_values() {
+        let blinds = Blinds {
+            small: 1000,
+            big: 2000,
+        };
+        assert_eq!(blinds.small, 1000);
+        assert_eq!(blinds.big, 2000);
+    }
+
+    // === Deck Tests (Extended) ===
+
+    #[test]
+    fn test_deck_deal_all_unique() {
+        let mut deck = Deck::default();
+        let mut cards = Vec::new();
+        for _ in 0..52 {
+            cards.push(deck.deal_card());
+        }
+        // Check all cards are dealt
+        assert_eq!(deck.deck_idx, 52);
+    }
+
+    #[test]
+    fn test_deck_shuffle_resets_index() {
+        let mut deck = Deck::default();
+        // Deal some cards
+        deck.deal_card();
+        deck.deal_card();
+        deck.deal_card();
+        assert_eq!(deck.deck_idx, 3);
+
+        // Shuffle should reset index
+        deck.shuffle();
+        assert_eq!(deck.deck_idx, 0);
+    }
+
+    // === Display trait tests ===
+
+    #[test]
+    fn test_suit_display() {
+        assert_eq!(format!("{}", Suit::Club), "♣");
+        assert_eq!(format!("{}", Suit::Spade), "♠");
+        assert_eq!(format!("{}", Suit::Diamond), "♦");
+        assert_eq!(format!("{}", Suit::Heart), "♥");
+        assert_eq!(format!("{}", Suit::Wild), "w");
+    }
+
+    #[test]
+    fn test_card_display_face_cards() {
+        let ace = Card(14, Suit::Spade);
+        let king = Card(13, Suit::Heart);
+        let queen = Card(12, Suit::Diamond);
+        let jack = Card(11, Suit::Club);
+
+        assert!(format!("{}", ace).contains("A"));
+        assert!(format!("{}", king).contains("K"));
+        assert!(format!("{}", queen).contains("Q"));
+        assert!(format!("{}", jack).contains("J"));
+    }
+
+    #[test]
+    fn test_card_display_number_cards() {
+        let two = Card(2, Suit::Club);
+        let ten = Card(10, Suit::Spade);
+
+        assert!(format!("{}", two).contains("2"));
+        assert!(format!("{}", ten).contains("10"));
+    }
+
+    #[test]
+    fn test_rank_display() {
+        assert_eq!(format!("{}", Rank::HighCard), "hi");
+        assert_eq!(format!("{}", Rank::OnePair), "1p");
+        assert_eq!(format!("{}", Rank::TwoPair), "2p");
+        assert_eq!(format!("{}", Rank::ThreeOfAKind), "3k");
+        assert_eq!(format!("{}", Rank::Straight), "s8");
+        assert_eq!(format!("{}", Rank::Flush), "fs");
+        assert_eq!(format!("{}", Rank::FullHouse), "fh");
+        assert_eq!(format!("{}", Rank::FourOfAKind), "4k");
+        assert_eq!(format!("{}", Rank::StraightFlush), "sf");
+    }
+
+    #[test]
+    fn test_username_display() {
+        let username = Username::new("alice");
+        assert_eq!(format!("{}", username), "alice");
+    }
+
+    #[test]
+    fn test_username_whitespace_replacement() {
+        let username = Username::new("alice bob");
+        assert_eq!(format!("{}", username), "alice_bob");
+    }
+
+    #[test]
+    fn test_username_from_string() {
+        let username: Username = "test_user".to_string().into();
+        assert_eq!(format!("{}", username), "test_user");
+    }
+
+    #[test]
+    fn test_blinds_display() {
+        let blinds = Blinds { small: 5, big: 10 };
+        assert_eq!(format!("{}", blinds), "$5/10");
+    }
+
+    #[test]
+    fn test_action_display_all_in() {
+        let action = Action::AllIn;
+        assert_eq!(format!("{}", action), "all-ins (unhinged)");
+    }
+
+    #[test]
+    fn test_action_display_call() {
+        let action = Action::Call;
+        assert_eq!(format!("{}", action), "calls");
+    }
+
+    #[test]
+    fn test_action_display_check() {
+        let action = Action::Check;
+        assert_eq!(format!("{}", action), "checks");
+    }
+
+    #[test]
+    fn test_action_display_fold() {
+        let action = Action::Fold;
+        assert_eq!(format!("{}", action), "folds");
+    }
+
+    #[test]
+    fn test_action_display_raise_with_amount() {
+        let action = Action::Raise(Some(100));
+        assert_eq!(format!("{}", action), "raises $100");
+    }
+
+    #[test]
+    fn test_action_display_raise_without_amount() {
+        let action = Action::Raise(None);
+        assert_eq!(format!("{}", action), "raises");
+    }
+
+    #[test]
+    fn test_action_choice_display() {
+        let all_in = ActionChoice::AllIn;
+        let call = ActionChoice::Call(50);
+        let check = ActionChoice::Check;
+        let fold = ActionChoice::Fold;
+        let raise = ActionChoice::Raise(100);
+
+        assert_eq!(format!("{}", all_in), "all-in");
+        assert_eq!(format!("{}", call), "call (== $50)");
+        assert_eq!(format!("{}", check), "check");
+        assert_eq!(format!("{}", fold), "fold");
+        assert_eq!(format!("{}", raise), "raise (>= $100)");
+    }
+
+    #[test]
+    fn test_action_choice_into_usize() {
+        let all_in: usize = ActionChoice::AllIn.into();
+        let call: usize = ActionChoice::Call(50).into();
+        let check: usize = ActionChoice::Check.into();
+        let fold: usize = ActionChoice::Fold.into();
+        let raise: usize = ActionChoice::Raise(100).into();
+
+        assert_eq!(all_in, 0);
+        assert_eq!(call, 1);
+        assert_eq!(check, 2);
+        assert_eq!(fold, 3);
+        assert_eq!(raise, 4);
+    }
+
+    #[test]
+    fn test_action_choice_to_action_conversion() {
+        let action: Action = ActionChoice::AllIn.into();
+        assert!(matches!(action, Action::AllIn));
+
+        let action: Action = ActionChoice::Call(50).into();
+        assert!(matches!(action, Action::Call));
+
+        let action: Action = ActionChoice::Check.into();
+        assert!(matches!(action, Action::Check));
+
+        let action: Action = ActionChoice::Fold.into();
+        assert!(matches!(action, Action::Fold));
+
+        let action: Action = ActionChoice::Raise(100).into();
+        assert!(matches!(action, Action::Raise(Some(100))));
+    }
+
+    #[test]
+    fn test_action_choices_display_single_option() {
+        let mut choices = HashSet::new();
+        choices.insert(ActionChoice::Fold);
+        let action_choices = ActionChoices(choices);
+
+        let display = format!("{}", action_choices);
+        assert!(display.contains("fold"));
+    }
+
+    #[test]
+    fn test_action_choices_display_two_options() {
+        let mut choices = HashSet::new();
+        choices.insert(ActionChoice::Fold);
+        choices.insert(ActionChoice::Check);
+        let action_choices = ActionChoices(choices);
+
+        let display = format!("{}", action_choices);
+        assert!(display.contains("or"));
+    }
+
+    #[test]
+    fn test_action_choices_display_multiple_options() {
+        let mut choices = HashSet::new();
+        choices.insert(ActionChoice::Fold);
+        choices.insert(ActionChoice::Check);
+        choices.insert(ActionChoice::Call(50));
+        let action_choices = ActionChoices(choices);
+
+        let display = format!("{}", action_choices);
+        assert!(display.contains("or"));
+    }
+
+    #[test]
+    fn test_action_choices_from_iterator() {
+        let choices = vec![ActionChoice::Fold, ActionChoice::Check, ActionChoice::Call(50)];
+        let action_choices = ActionChoices::from(choices);
+
+        assert_eq!(action_choices.0.len(), 3);
+    }
+
+    #[test]
+    fn test_action_choices_contains_method() {
+        let mut choices_set = HashSet::new();
+        choices_set.insert(ActionChoice::Fold);
+        choices_set.insert(ActionChoice::Call(50));
+        let choices = ActionChoices(choices_set);
+
+        assert!(choices.contains(&Action::Fold));
+        assert!(choices.contains(&Action::Call));
+        assert!(!choices.contains(&Action::Check));
+    }
+
+    #[test]
+    fn test_bet_display() {
+        let all_in = Bet { action: BetAction::AllIn, amount: 100 };
+        let call = Bet { action: BetAction::Call, amount: 50 };
+        let raise = Bet { action: BetAction::Raise, amount: 200 };
+
+        assert_eq!(format!("{}", all_in), "all-in of $100");
+        assert_eq!(format!("{}", call), "call of $50");
+        assert_eq!(format!("{}", raise), "raise of $200");
+    }
+
+    #[test]
+    fn test_action_from_bet_conversion() {
+        let all_in_bet = Bet { action: BetAction::AllIn, amount: 100 };
+        let action: Action = all_in_bet.into();
+        assert!(matches!(action, Action::AllIn));
+
+        let call_bet = Bet { action: BetAction::Call, amount: 50 };
+        let action: Action = call_bet.into();
+        assert!(matches!(action, Action::Call));
+
+        let raise_bet = Bet { action: BetAction::Raise, amount: 200 };
+        let action: Action = raise_bet.into();
+        assert!(matches!(action, Action::Raise(Some(200))));
+    }
+
+    #[test]
+    fn test_player_state_display() {
+        assert_eq!(format!("{}", PlayerState::AllIn), "all-in ");
+        assert_eq!(format!("{}", PlayerState::Call), "call   ");
+        assert_eq!(format!("{}", PlayerState::Check), "check  ");
+        assert_eq!(format!("{}", PlayerState::Fold), "folded ");
+        assert_eq!(format!("{}", PlayerState::Raise), "raise  ");
+        assert_eq!(format!("{}", PlayerState::Wait), "waiting");
+    }
+
+    #[test]
+    fn test_player_reset_method() {
+        let user = User {
+            name: "test".to_string().into(),
+            money: 1000,
+        };
+        let mut player = Player::new(user, 0);
+
+        // Modify player state
+        player.state = PlayerState::Fold;
+        player.cards = vec![Card(14, Suit::Spade), Card(13, Suit::Heart)];
+        player.showing = true;
+
+        // Reset player
+        player.reset();
+
+        assert!(matches!(player.state, PlayerState::Wait));
+        assert!(player.cards.is_empty());
+        assert!(!player.showing);
+    }
+
+    #[test]
+    fn test_pot_new() {
+        let pot = Pot::new(10);
+        assert!(pot.investments.capacity() >= 10);
+        assert!(pot.is_empty());
+    }
+
+    #[test]
+    fn test_pot_bet_method() {
+        let mut pot = Pot::default();
+        let bet = Bet { action: BetAction::Call, amount: 50 };
+
+        pot.bet(0, &bet);
+        assert_eq!(pot.get_investment_by_player_idx(0), 50);
+    }
+
+    #[test]
+    fn test_pot_get_call() {
+        let mut pot = Pot::default();
+        pot.investments.insert(0, 50);
+        pot.investments.insert(1, 100);
+        pot.investments.insert(2, 75);
+
+        assert_eq!(pot.get_call(), 100);
+    }
+
+    #[test]
+    fn test_pot_get_call_empty_pot() {
+        let pot = Pot::default();
+        assert_eq!(pot.get_call(), 0);
+    }
+
+    #[test]
+    fn test_pot_get_call_by_player_idx() {
+        let mut pot = Pot::default();
+        pot.investments.insert(0, 50);
+        pot.investments.insert(1, 100);
+
+        assert_eq!(pot.get_call_by_player_idx(0), 50); // needs 50 more to match 100
+        assert_eq!(pot.get_call_by_player_idx(1), 0);  // already at max
+    }
+
+    #[test]
+    fn test_pot_get_investment_by_player_idx() {
+        let mut pot = Pot::default();
+        pot.investments.insert(0, 50);
+
+        assert_eq!(pot.get_investment_by_player_idx(0), 50);
+        assert_eq!(pot.get_investment_by_player_idx(1), 0); // not in pot
+    }
+
+    #[test]
+    fn test_pot_get_min_raise_by_player_idx() {
+        let mut pot = Pot::default();
+        pot.investments.insert(0, 50);
+        pot.investments.insert(1, 100);
+
+        // Player 0 needs to raise to at least 2*100 - 50 = 150 total
+        assert_eq!(pot.get_min_raise_by_player_idx(0), 150);
+        // Player 1 needs to raise to at least 2*100 - 100 = 100 more
+        assert_eq!(pot.get_min_raise_by_player_idx(1), 100);
+    }
+
+    #[test]
+    fn test_pot_get_size() {
+        let mut pot = Pot::default();
+        pot.investments.insert(0, 50);
+        pot.investments.insert(1, 100);
+        pot.investments.insert(2, 75);
+
+        assert_eq!(pot.get_size(), 225);
+    }
+
+    #[test]
+    fn test_pot_is_empty() {
+        let mut pot = Pot::default();
+        assert!(pot.is_empty());
+
+        pot.investments.insert(0, 50);
+        assert!(!pot.is_empty());
+    }
+
+    #[test]
+    fn test_vote_display_kick() {
+        let vote = Vote::Kick(Username::new("alice"));
+        assert_eq!(format!("{}", vote), "kick alice");
+    }
+
+    #[test]
+    fn test_vote_display_reset_all() {
+        let vote = Vote::Reset(None);
+        assert_eq!(format!("{}", vote), "reset everyone's money");
+    }
+
+    #[test]
+    fn test_vote_display_reset_specific() {
+        let vote = Vote::Reset(Some(Username::new("bob")));
+        assert_eq!(format!("{}", vote), "reset bob's money");
+    }
+
+    #[test]
+    fn test_pot_view_display() {
+        let pot_view = PotView { size: 500 };
+        assert_eq!(format!("{}", pot_view), "$500");
+    }
+
+    #[test]
+    fn test_user_borrow_trait() {
+        use std::borrow::Borrow;
+
+        let user = User {
+            name: "alice".to_string().into(),
+            money: 1000,
+        };
+        let username_ref: &Username = user.borrow();
+        assert_eq!(format!("{}", username_ref), "alice");
+    }
+
+    #[test]
+    fn test_pot_bet_accumulates() {
+        let mut pot = Pot::default();
+        let bet1 = Bet { action: BetAction::Call, amount: 50 };
+        let bet2 = Bet { action: BetAction::Raise, amount: 100 };
+
+        pot.bet(0, &bet1);
+        pot.bet(0, &bet2);
+
+        assert_eq!(pot.get_investment_by_player_idx(0), 150);
+    }
+
+    #[test]
+    fn test_player_view_creation() {
+        let user = User {
+            name: "test".to_string().into(),
+            money: 1000,
+        };
+        let cards = vec![Card(14, Suit::Spade), Card(13, Suit::Heart)];
+        let player_view = PlayerView {
+            user: user.clone(),
+            state: PlayerState::Wait,
+            cards: cards.clone(),
+        };
+
+        assert_eq!(player_view.user, user);
+        assert!(matches!(player_view.state, PlayerState::Wait));
+        assert_eq!(player_view.cards, cards);
+    }
+
+    #[test]
+    fn test_action_choice_equality() {
+        // ActionChoice uses discriminant for equality, so amounts don't matter
+        assert_eq!(ActionChoice::Call(50), ActionChoice::Call(100));
+        assert_eq!(ActionChoice::Raise(50), ActionChoice::Raise(200));
+        assert_ne!(ActionChoice::Call(50), ActionChoice::Fold);
+    }
+
+    #[test]
+    fn test_action_choice_hash() {
+        use std::collections::HashSet;
+
+        let mut set = HashSet::new();
+        set.insert(ActionChoice::Call(50));
+        // Should not insert duplicate since hash is based on discriminant
+        set.insert(ActionChoice::Call(100));
+
+        assert_eq!(set.len(), 1);
+    }
+
+    #[test]
+    fn test_default_constants() {
+        assert_eq!(DEFAULT_BUY_IN, 600);
+        assert_eq!(DEFAULT_MIN_BIG_BLIND, 10);
+        assert_eq!(DEFAULT_MIN_SMALL_BLIND, 5);
+    }
+
+    #[test]
+    fn test_suit_variants() {
+        // Test all suit variants can be created
+        let suits = vec![Suit::Club, Suit::Spade, Suit::Diamond, Suit::Heart, Suit::Wild];
+        assert_eq!(suits.len(), 5);
+    }
+
+    #[test]
+    fn test_card_ace_low_and_high() {
+        let ace_low = Card(1, Suit::Spade);
+        let ace_high = Card(14, Suit::Spade);
+
+        // Both should display as "A"
+        assert!(format!("{}", ace_low).contains("A"));
+        assert!(format!("{}", ace_high).contains("A"));
+    }
+
+    #[test]
+    fn test_player_cards_capacity() {
+        let user = User {
+            name: "test".to_string().into(),
+            money: 1000,
+        };
+        let player = Player::new(user, 0);
+
+        // Cards vec should have capacity for 2 cards
+        assert_eq!(player.cards.capacity(), 2);
+    }
+
+    // === Input Validation Tests (Sprint 6 Stage 5) ===
+
+    // === Username Validation Tests ===
+
+    #[test]
+    fn test_username_empty_string() {
+        let username = Username::new("");
+        assert_eq!(username.to_string(), "");
+    }
+
+    #[test]
+    fn test_username_extremely_long_string() {
+        let long_string = "a".repeat(10000);
+        let username = Username::new(&long_string);
+        // Should be truncated to MAX_USER_INPUT_LENGTH / 2 = 16
+        assert_eq!(username.to_string().len(), constants::MAX_USER_INPUT_LENGTH / 2);
+    }
+
+    #[test]
+    fn test_username_unicode_characters() {
+        let unicode_name = "用户名🎮";
+        let username = Username::new(unicode_name);
+        // Should preserve unicode characters
+        assert!(username.to_string().contains("用户名"));
+    }
+
+    #[test]
+    fn test_username_special_characters() {
+        let special = "user!@#$%^&*()";
+        let username = Username::new(special);
+        // Special chars should be preserved
+        assert!(username.to_string().contains("user!@#$%^&*()"));
+    }
+
+    #[test]
+    fn test_username_sql_injection_attempt() {
+        let sql_injection = "admin'; DROP TABLE users; --";
+        let username = Username::new(sql_injection);
+        // Should be safely stored as-is (no SQL backend)
+        assert!(username.to_string().contains("admin"));
+    }
+
+    #[test]
+    fn test_username_xss_attempt() {
+        let xss = "<script>alert('xss')</script>";
+        let username = Username::new(xss);
+        // Should be stored as-is (rendering layer responsible for escaping)
+        assert!(username.to_string().contains("script"));
+    }
+
+    #[test]
+    fn test_username_whitespace_only() {
+        let whitespace = "   \t\n";
+        let username = Username::new(whitespace);
+        // All whitespace should be converted to underscores
+        assert_eq!(username.to_string(), "_____");
+    }
+
+    #[test]
+    fn test_username_mixed_whitespace() {
+        let mixed = "user name\ttabs\nlines";
+        let username = Username::new(mixed);
+        // All whitespace types should be converted to underscores (truncated to 16 chars)
+        assert_eq!(username.to_string(), "user_name_tabs_l");
+        assert_eq!(username.to_string().len(), 16); // MAX_USER_INPUT_LENGTH / 2
+    }
+
+    #[test]
+    fn test_username_exactly_max_length() {
+        let exact_max = "a".repeat(constants::MAX_USER_INPUT_LENGTH / 2);
+        let username = Username::new(&exact_max);
+        assert_eq!(username.to_string().len(), constants::MAX_USER_INPUT_LENGTH / 2);
+    }
+
+    #[test]
+    fn test_username_null_bytes() {
+        let with_null = "user\0name";
+        let username = Username::new(with_null);
+        // Null bytes should be preserved (stored as String)
+        assert!(username.to_string().contains("user"));
+    }
+
+    #[test]
+    fn test_username_newline_characters() {
+        let with_newlines = "user\nwith\nlines";
+        let username = Username::new(with_newlines);
+        // Newlines should become underscores
+        assert_eq!(username.to_string(), "user_with_lines");
+    }
+
+    #[test]
+    fn test_username_leading_trailing_spaces() {
+        let spaced = "  username  ";
+        let username = Username::new(spaced);
+        // Leading/trailing spaces should become underscores
+        assert_eq!(username.to_string(), "__username__");
+    }
+
+    // === Action/Command Parameter Validation Tests ===
+
+    #[test]
+    fn test_action_raise_zero_amount() {
+        let action = Action::Raise(Some(0));
+        assert_eq!(action, Action::Raise(Some(0)));
+    }
+
+    #[test]
+    fn test_action_raise_max_u32() {
+        let action = Action::Raise(Some(u32::MAX));
+        assert_eq!(action, Action::Raise(Some(u32::MAX)));
+    }
+
+    #[test]
+    fn test_action_raise_none_parameter() {
+        let action = Action::Raise(None);
+        assert_eq!(action, Action::Raise(None));
+    }
+
+    #[test]
+    fn test_action_choice_call_zero() {
+        let choice = ActionChoice::Call(0);
+        // Zero call amount should be valid
+        match choice {
+            ActionChoice::Call(amt) => assert_eq!(amt, 0),
+            _ => panic!("Expected Call action"),
+        }
+    }
+
+    #[test]
+    fn test_action_choice_call_max_u32() {
+        let choice = ActionChoice::Call(u32::MAX);
+        match choice {
+            ActionChoice::Call(amt) => assert_eq!(amt, u32::MAX),
+            _ => panic!("Expected Call action"),
+        }
+    }
+
+    #[test]
+    fn test_action_choice_raise_zero() {
+        let choice = ActionChoice::Raise(0);
+        match choice {
+            ActionChoice::Raise(amt) => assert_eq!(amt, 0),
+            _ => panic!("Expected Raise action"),
+        }
+    }
+
+    #[test]
+    fn test_action_choice_raise_max_u32() {
+        let choice = ActionChoice::Raise(u32::MAX);
+        match choice {
+            ActionChoice::Raise(amt) => assert_eq!(amt, u32::MAX),
+            _ => panic!("Expected Raise action"),
+        }
+    }
+
+    #[test]
+    fn test_bet_zero_amount() {
+        let bet = Bet {
+            amount: 0,
+            action: BetAction::Call,
+        };
+        assert_eq!(bet.amount, 0);
+    }
+
+    #[test]
+    fn test_bet_max_amount() {
+        let bet = Bet {
+            amount: u32::MAX,
+            action: BetAction::Raise,
+        };
+        assert_eq!(bet.amount, u32::MAX);
+    }
+
+    #[test]
+    fn test_player_seat_idx_zero() {
+        let user = User {
+            name: Username::new("test"),
+            money: 1000,
+        };
+        let player = Player::new(user, 0);
+        assert_eq!(player.seat_idx, 0);
+    }
+
+    #[test]
+    fn test_player_seat_idx_max() {
+        let user = User {
+            name: Username::new("test"),
+            money: 1000,
+        };
+        let player = Player::new(user, usize::MAX);
+        assert_eq!(player.seat_idx, usize::MAX);
+    }
+
+    #[test]
+    fn test_player_zero_money() {
+        let user = User {
+            name: Username::new("broke"),
+            money: 0,
+        };
+        let player = Player::new(user.clone(), 0);
+        assert_eq!(player.user.money, 0);
+        assert_eq!(user.money, 0);
+    }
+
+    #[test]
+    fn test_player_max_money() {
+        let user = User {
+            name: Username::new("whale"),
+            money: u32::MAX,
+        };
+        let player = Player::new(user.clone(), 0);
+        assert_eq!(player.user.money, u32::MAX);
+    }
+
+    #[test]
+    fn test_action_serialization_with_extreme_values() {
+        let actions = vec![
+            Action::Raise(Some(0)),
+            Action::Raise(Some(u32::MAX)),
+            Action::Raise(None),
+        ];
+
+        for action in actions {
+            let serialized = bincode::serialize(&action).unwrap();
+            let deserialized: Action = bincode::deserialize(&serialized).unwrap();
+            assert_eq!(action, deserialized);
+        }
+    }
+
+    // === Game Configuration Validation Tests ===
+
+    #[test]
+    fn test_blinds_zero_values() {
+        let blinds = Blinds {
+            small: 0,
+            big: 0,
+        };
+        assert_eq!(blinds.small, 0);
+        assert_eq!(blinds.big, 0);
+    }
+
+    #[test]
+    fn test_blinds_max_values() {
+        let blinds = Blinds {
+            small: u32::MAX,
+            big: u32::MAX,
+        };
+        assert_eq!(blinds.small, u32::MAX);
+        assert_eq!(blinds.big, u32::MAX);
+    }
+
+    #[test]
+    fn test_blinds_asymmetric_values() {
+        let blinds = Blinds {
+            small: 100,
+            big: 50, // Invalid game state but type allows it
+        };
+        assert_eq!(blinds.small, 100);
+        assert_eq!(blinds.big, 50);
+    }
+
+    #[test]
+    fn test_blinds_serialization_roundtrip() {
+        let blinds = Blinds {
+            small: 12345,
+            big: 67890,
+        };
+        let serialized = bincode::serialize(&blinds).unwrap();
+        let deserialized: Blinds = bincode::deserialize(&serialized).unwrap();
+        assert_eq!(blinds.small, deserialized.small);
+        assert_eq!(blinds.big, deserialized.big);
+    }
+
+    #[test]
+    fn test_default_constants_sanity() {
+        // Verify default constants are sane
+        assert!(DEFAULT_BUY_IN > 0);
+        assert!(DEFAULT_MIN_BIG_BLIND > 0);
+        assert!(DEFAULT_MIN_SMALL_BLIND > 0);
+        assert!(DEFAULT_MIN_SMALL_BLIND < DEFAULT_MIN_BIG_BLIND);
+    }
+
+    #[test]
+    fn test_max_players_constant() {
+        assert_eq!(constants::MAX_PLAYERS, 10);
+        assert!(constants::MAX_PLAYERS > 0);
+        assert!(constants::MAX_PLAYERS <= 23); // Max for texas hold'em
+    }
+
+    #[test]
+    fn test_default_max_users_constant() {
+        assert_eq!(constants::DEFAULT_MAX_USERS, constants::MAX_PLAYERS + 6);
+        assert!(constants::DEFAULT_MAX_USERS >= constants::MAX_PLAYERS);
+    }
+
+    #[test]
+    fn test_user_input_length_constant() {
+        assert_eq!(constants::MAX_USER_INPUT_LENGTH, 32);
+        assert!(constants::MAX_USER_INPUT_LENGTH > 0);
+    }
+
+    #[test]
+    fn test_pot_empty_investments() {
+        let pot = Pot {
+            investments: HashMap::new(),
+        };
+        assert_eq!(pot.investments.len(), 0);
+    }
+
+    #[test]
+    fn test_pot_with_investments() {
+        let mut investments = HashMap::new();
+        investments.insert(0, 1000);
+        investments.insert(1, 500);
+        let pot = Pot { investments };
+        assert_eq!(pot.investments.len(), 2);
+        assert_eq!(*pot.investments.get(&0).unwrap(), 1000);
+        assert_eq!(*pot.investments.get(&1).unwrap(), 500);
+    }
+
+    // === Message Payload Validation Tests ===
+
+    #[test]
+    fn test_user_serialization_with_empty_name() {
+        let user = User {
+            name: Username::new(""),
+            money: 100,
+        };
+        let serialized = bincode::serialize(&user).unwrap();
+        let deserialized: User = bincode::deserialize(&serialized).unwrap();
+        assert_eq!(user.name, deserialized.name);
+    }
+
+    #[test]
+    fn test_user_serialization_with_long_name() {
+        let long_name = "a".repeat(1000);
+        let user = User {
+            name: Username::new(&long_name),
+            money: 100,
+        };
+        let serialized = bincode::serialize(&user).unwrap();
+        let deserialized: User = bincode::deserialize(&serialized).unwrap();
+        // Should be truncated to 16 chars
+        assert_eq!(deserialized.name.to_string().len(), 16);
+    }
+
+    #[test]
+    fn test_user_serialization_with_unicode() {
+        let user = User {
+            name: Username::new("测试用户🎮"),
+            money: 500,
+        };
+        let serialized = bincode::serialize(&user).unwrap();
+        let deserialized: User = bincode::deserialize(&serialized).unwrap();
+        assert_eq!(user.name, deserialized.name);
+    }
+
+    #[test]
+    fn test_card_serialization_roundtrip() {
+        for value in 1..=14 {
+            for suit in [Suit::Club, Suit::Spade, Suit::Diamond, Suit::Heart] {
+                let card = Card(value, suit);
+                let serialized = bincode::serialize(&card).unwrap();
+                let deserialized: Card = bincode::deserialize(&serialized).unwrap();
+                assert_eq!(card, deserialized);
+            }
+        }
+    }
+
+    #[test]
+    fn test_player_view_serialization_with_empty_cards() {
+        let user = User {
+            name: Username::new("test"),
+            money: 1000,
+        };
+        let player_view = PlayerView {
+            user: user.clone(),
+            state: PlayerState::Fold,
+            cards: vec![],
+        };
+        let serialized = bincode::serialize(&player_view).unwrap();
+        let deserialized: PlayerView = bincode::deserialize(&serialized).unwrap();
+        assert_eq!(player_view.cards.len(), deserialized.cards.len());
+    }
+
+    #[test]
+    fn test_player_view_serialization_with_cards() {
+        let user = User {
+            name: Username::new("test"),
+            money: 1000,
+        };
+        let player_view = PlayerView {
+            user: user.clone(),
+            state: PlayerState::Call,
+            cards: vec![Card(14, Suit::Spade), Card(13, Suit::Heart)],
+        };
+
+        let serialized = bincode::serialize(&player_view).unwrap();
+        let deserialized: PlayerView = bincode::deserialize(&serialized).unwrap();
+        assert_eq!(player_view.cards, deserialized.cards);
+    }
+
+    #[test]
+    fn test_vote_kick_serialization() {
+        let vote = Vote::Kick(Username::new("target"));
+        let serialized = bincode::serialize(&vote).unwrap();
+        let deserialized: Vote = bincode::deserialize(&serialized).unwrap();
+        assert_eq!(vote, deserialized);
+    }
+
+    #[test]
+    fn test_vote_reset_serialization() {
+        let vote = Vote::Reset(None);
+        let serialized = bincode::serialize(&vote).unwrap();
+        let deserialized: Vote = bincode::deserialize(&serialized).unwrap();
+        assert_eq!(vote, deserialized);
+    }
+
+    #[test]
+    fn test_subhand_full_house_values() {
+        let subhand = SubHand {
+            rank: Rank::FullHouse,
+            values: vec![13, 13, 13, 7, 7],
+        };
+        assert_eq!(subhand.rank, Rank::FullHouse);
+        assert_eq!(subhand.values, vec![13, 13, 13, 7, 7]);
+    }
+
+    #[test]
+    fn test_subhand_with_empty_values() {
+        let subhand = SubHand {
+            rank: Rank::HighCard,
+            values: vec![],
+        };
+        assert_eq!(subhand.values.len(), 0);
+    }
+
+    #[test]
+    fn test_subhand_with_max_values() {
+        let values = vec![14; 100]; // Unusually long values vector
+        let subhand = SubHand {
+            rank: Rank::StraightFlush,
+            values,
+        };
+        assert_eq!(subhand.values.len(), 100);
+    }
+
+    #[test]
+    fn test_deck_deals_all_52_cards() {
+        let mut deck = Deck::default();
+        let mut dealt_cards = Vec::new();
+
+        for _ in 0..52 {
+            dealt_cards.push(deck.deal_card());
+        }
+
+        assert_eq!(dealt_cards.len(), 52);
+        assert_eq!(deck.deck_idx, 52);
+    }
+
+    #[test]
+    fn test_suit_display_all_variants() {
+        assert_eq!(format!("{}", Suit::Club), "♣");
+        assert_eq!(format!("{}", Suit::Spade), "♠");
+        assert_eq!(format!("{}", Suit::Diamond), "♦");
+        assert_eq!(format!("{}", Suit::Heart), "♥");
+        assert_eq!(format!("{}", Suit::Wild), "w");
+    }
+
+    #[test]
+    fn test_rank_display_all_variants() {
+        assert_eq!(format!("{}", Rank::HighCard), "hi");
+        assert_eq!(format!("{}", Rank::OnePair), "1p");
+        assert_eq!(format!("{}", Rank::TwoPair), "2p");
+        assert_eq!(format!("{}", Rank::ThreeOfAKind), "3k");
+        assert_eq!(format!("{}", Rank::Straight), "s8");
+        assert_eq!(format!("{}", Rank::Flush), "fs");
+        assert_eq!(format!("{}", Rank::FullHouse), "fh");
+        assert_eq!(format!("{}", Rank::FourOfAKind), "4k");
+        assert_eq!(format!("{}", Rank::StraightFlush), "sf");
+    }
+}

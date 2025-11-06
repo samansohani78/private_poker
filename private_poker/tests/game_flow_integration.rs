@@ -131,9 +131,9 @@ fn test_multiple_spectators() {
     thread::sleep(Duration::from_millis(50));
 
     // Connect 3 spectators
-    let (spec1, view1) = Client::connect(Username::new("viewer1"), &addr).unwrap();
-    let (spec2, view2) = Client::connect(Username::new("viewer2"), &addr).unwrap();
-    let (spec3, view3) = Client::connect(Username::new("viewer3"), &addr).unwrap();
+    let (_spec1, _view1) = Client::connect(Username::new("viewer1"), &addr).unwrap();
+    let (_spec2, _view2) = Client::connect(Username::new("viewer2"), &addr).unwrap();
+    let (_spec3, view3) = Client::connect(Username::new("viewer3"), &addr).unwrap();
 
     // All should see 3 spectators
     assert!(view3.spectators.len() == 3 || view3.spectators.len() == 2); // Race condition tolerance
