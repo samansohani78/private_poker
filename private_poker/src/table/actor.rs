@@ -5,9 +5,11 @@ use super::{
     messages::{TableMessage, TableResponse, TableStateResponse},
 };
 use crate::{
+    bot::BotManager,
     game::{entities::User, PokerState},
     wallet::{TableId, WalletManager},
 };
+use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::{
     sync::mpsc,
@@ -58,6 +60,9 @@ pub struct TableActor {
     /// Wallet manager for buy-ins/cash-outs
     wallet_manager: Arc<WalletManager>,
 
+    /// Bot manager for automatic bot spawning
+    bot_manager: BotManager,
+
     /// Is table paused
     is_paused: bool,
 
@@ -79,6 +84,7 @@ impl TableActor {
     /// * `id` - Table ID
     /// * `config` - Table configuration
     /// * `wallet_manager` - Wallet manager reference
+    /// * `db_pool` - Database connection pool
     ///
     /// # Returns
     ///
@@ -87,11 +93,15 @@ impl TableActor {
         id: TableId,
         config: TableConfig,
         wallet_manager: Arc<WalletManager>,
+        db_pool: Arc<PgPool>,
     ) -> (Self, TableHandle) {
         let (sender, inbox) = mpsc::channel(100);
 
         // Create initial poker state
         let state = PokerState::new();
+
+        // Create bot manager
+        let bot_manager = BotManager::new(id, config.clone(), db_pool);
 
         let actor = Self {
             id,
@@ -99,6 +109,7 @@ impl TableActor {
             state,
             inbox,
             wallet_manager,
+            bot_manager,
             is_paused: false,
             is_closed: false,
             top_up_tracker: std::collections::HashMap::new(),

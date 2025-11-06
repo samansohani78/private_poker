@@ -61,6 +61,10 @@ pub use table::{
     TableMetadata, TableResponse, TableSpeed, TableStateResponse,
 };
 
+/// Bot components for automatic bot players with difficulty presets.
+pub mod bot;
+pub use bot::{BotConfig, BotDecisionMaker, BotId, BotManager, BotPlayer, BotStats, BotTelemetry, DifficultyParams};
+
 /// Networking components for client-server communication.
 pub mod net;
 pub use net::{client::Client, messages, server, utils};

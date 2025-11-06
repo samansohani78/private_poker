@@ -127,7 +127,7 @@ impl TableManager {
             .map_err(|e| format!("Failed to create escrow: {}", e))?;
 
         // Create and spawn table actor
-        let (actor, handle) = TableActor::new(table_id, config, self.wallet_manager.clone());
+        let (actor, handle) = TableActor::new(table_id, config, self.wallet_manager.clone(), self.pool.clone());
 
         // Store handle
         let mut tables = self.tables.write().await;
