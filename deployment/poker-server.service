@@ -1,0 +1,49 @@
+# Systemd service file for Private Poker Server
+# Copy to: /etc/systemd/system/poker-server.service
+# Then run:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable poker-server
+#   sudo systemctl start poker-server
+
+[Unit]
+Description=Private Poker Multi-Table Poker Server
+Documentation=https://github.com/your-org/private_poker
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=poker
+Group=poker
+WorkingDirectory=/opt/private_poker
+
+# Environment variables
+EnvironmentFile=/opt/private_poker/.env
+Environment="RUST_LOG=info"
+
+# Server binary
+ExecStart=/opt/private_poker/pp_server --bind ${SERVER_BIND:-0.0.0.0:8080}
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=0
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/private_poker/logs
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=poker-server
+
+[Install]
+WantedBy=multi-user.target
