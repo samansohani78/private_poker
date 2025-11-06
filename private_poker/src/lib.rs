@@ -65,6 +65,13 @@ pub use table::{
 pub mod bot;
 pub use bot::{BotConfig, BotDecisionMaker, BotId, BotManager, BotPlayer, BotStats, BotTelemetry, DifficultyParams};
 
+/// Security components for rate limiting and anti-collusion detection.
+pub mod security;
+pub use security::{
+    AntiCollusionDetector, CollusionFlag, FlagSeverity, FlagType, IpTableRestrictions,
+    RateLimitConfig, RateLimitResult, RateLimiter, SeatRandomizer,
+};
+
 /// Networking components for client-server communication.
 pub mod net;
 pub use net::{client::Client, messages, server, utils};
