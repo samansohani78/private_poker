@@ -983,6 +983,11 @@ pub fn run(addr: SocketAddr, config: PokerConfig) -> Result<(), Error> {
                                     }
                                 })
                             }),
+                        // V2 commands not yet implemented - will be handled by multi-table server
+                        _ => {
+                            warn!("Received V2 command {:?} but multi-table server not yet implemented", msg.command);
+                            Err(UserError::InvalidAction)
+                        }
                     };
 
                     // Get the result from a client's command. If their command

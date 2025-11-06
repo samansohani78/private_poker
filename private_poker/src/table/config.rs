@@ -41,7 +41,7 @@ impl std::fmt::Display for BotDifficulty {
 }
 
 /// Table configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TableConfig {
     /// Table name
     pub name: String,

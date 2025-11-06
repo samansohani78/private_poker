@@ -9,6 +9,9 @@ pub mod client;
 /// Message types for client-server communication protocol.
 pub mod messages;
 
+/// Protocol versioning for backward compatibility.
+pub mod protocol_version;
+
 /// Multi-threaded TCP server with async I/O event loop.
 pub mod server;
 

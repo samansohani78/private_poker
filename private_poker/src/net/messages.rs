@@ -6,6 +6,14 @@ use super::super::game::{
     entities::{Action, ActionChoices, GameView, Username, Vote},
 };
 
+// Import types from other modules
+use crate::auth::{SessionTokens, User};
+use crate::wallet::WalletEntry;
+use crate::table::{
+    TableConfig, TableSpeed,
+};
+use chrono::{DateTime, Utc};
+
 /// Errors due to the poker client's interaction with the poker server
 /// and not from the user's particular action.
 #[derive(Debug, Deserialize, Eq, thiserror::Error, PartialEq, Serialize)]
@@ -18,6 +26,60 @@ pub enum ClientError {
     Expired,
     #[error("unassociated")]
     Unassociated,
+}
+
+/// Table ID type
+pub type TableId = i64;
+
+/// Stakes tier classification based on big blind size
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StakesTier {
+    /// BB ≤ 10
+    Micro,
+    /// BB 10-100
+    Low,
+    /// BB 100-1000
+    Mid,
+    /// BB > 1000
+    High,
+}
+
+impl StakesTier {
+    /// Determine stakes tier from big blind amount
+    pub fn from_big_blind(bb: i64) -> Self {
+        match bb {
+            0..=10 => StakesTier::Micro,
+            11..=100 => StakesTier::Low,
+            101..=1000 => StakesTier::Mid,
+            _ => StakesTier::High,
+        }
+    }
+}
+
+/// Table filter criteria for discovery
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TableFilter {
+    pub stakes_tier: Option<StakesTier>,
+    pub min_players: Option<usize>,
+    pub max_players: Option<usize>,
+    pub has_waitlist_space: bool,
+    pub speed: Option<TableSpeed>,
+    pub bots_enabled: Option<bool>,
+    pub is_private: bool,
+}
+
+/// Table information for discovery/listing
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TableInfo {
+    pub id: TableId,
+    pub name: String,
+    pub config: TableConfig,
+    pub player_count: usize,
+    pub waitlist_count: usize,
+    pub stakes_tier: StakesTier,
+    pub is_private: bool,
+    pub requires_passphrase: bool,
+    pub has_invite: bool,
 }
 
 /// Type of user state change requests.
@@ -40,6 +102,7 @@ impl fmt::Display for UserState {
 /// A user command.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum UserCommand {
+    // === Legacy Commands (V1) ===
     /// The user wants to change their state (play or spectate).
     ChangeState(UserState),
     /// A new user wants to connect to the game.
@@ -60,20 +123,195 @@ pub enum UserCommand {
     TakeAction(Action),
     /// User wants to cast a vote.
     CastVote(Vote),
+
+    // === Authentication Commands (V2) ===
+    /// Register a new account
+    Register {
+        username: String,
+        password: String,
+        email: Option<String>,
+    },
+    /// Login to existing account
+    Login {
+        username: String,
+        password: String,
+        device_fingerprint: String,
+    },
+    /// Refresh access token using refresh token
+    RefreshToken {
+        refresh_token: String,
+        device_fingerprint: String,
+    },
+    /// Logout from current session
+    Logout,
+
+    // === 2FA Commands ===
+    /// Enable two-factor authentication
+    Enable2FA {
+        secret: String,
+        code: String,
+    },
+    /// Verify 2FA code
+    Verify2FA {
+        code: String,
+    },
+
+    // === Password Reset Commands ===
+    /// Request password reset email
+    RequestPasswordReset {
+        email: String,
+    },
+    /// Reset password with code
+    ResetPassword {
+        email: String,
+        code: String,
+        new_password: String,
+    },
+
+    // === Table Management Commands (V2) ===
+    /// Create a new table
+    CreateTable {
+        config: TableConfig,
+    },
+    /// List available tables with optional filter
+    ListTables {
+        filter: Option<TableFilter>,
+    },
+    /// Join a table with buy-in
+    JoinTable {
+        table_id: TableId,
+        buy_in: i64,
+        passphrase: Option<String>,
+    },
+    /// Leave a table
+    LeaveTable {
+        table_id: TableId,
+    },
+    /// Join table waitlist
+    JoinWaitlist {
+        table_id: TableId,
+    },
+    /// Leave table waitlist
+    LeaveWaitlist {
+        table_id: TableId,
+    },
+    /// Start spectating a table
+    SpectateTable {
+        table_id: TableId,
+    },
+    /// Stop spectating
+    StopSpectating {
+        table_id: TableId,
+    },
+
+    // === Wallet Commands (V2) ===
+    /// Get current wallet balance
+    GetBalance,
+    /// Claim daily faucet
+    ClaimFaucet,
+    /// Get transaction history
+    GetTransactionHistory {
+        limit: usize,
+        offset: usize,
+    },
+
+    // === Chat Commands (V2) ===
+    /// Send chat message to table
+    SendChatMessage {
+        table_id: TableId,
+        message: String,
+    },
+    /// Mute a user at table (owner/mod only)
+    MuteUser {
+        table_id: TableId,
+        user_id: i64,
+    },
+    /// Kick a user from table (owner/mod only)
+    KickUser {
+        table_id: TableId,
+        user_id: i64,
+    },
+
+    // === Multi-Table Game Commands (V2) ===
+    /// Take action at specific table
+    TakeActionAtTable {
+        table_id: TableId,
+        action: Action,
+    },
+    /// Cast vote at specific table
+    CastVoteAtTable {
+        table_id: TableId,
+        vote: Vote,
+    },
+    /// Start game at specific table
+    StartGameAtTable {
+        table_id: TableId,
+    },
+    /// Show hand at specific table
+    ShowHandAtTable {
+        table_id: TableId,
+    },
 }
 
 impl fmt::Display for UserCommand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let repr = match &self {
-            Self::ChangeState(state) => &format!("requested to join the {state}s"),
-            Self::Connect => "connected",
-            Self::Disconnect => "disconnected",
-            Self::ShowHand => "showed their hand",
-            Self::StartGame => "started the game",
-            Self::TakeAction(action) => &action.to_string(),
-            Self::CastVote(vote) => &format!("voted to {vote}"),
+            // Legacy commands
+            Self::ChangeState(state) => format!("requested to join the {state}s"),
+            Self::Connect => "connected".to_string(),
+            Self::Disconnect => "disconnected".to_string(),
+            Self::ShowHand => "showed their hand".to_string(),
+            Self::StartGame => "started the game".to_string(),
+            Self::TakeAction(action) => action.to_string(),
+            Self::CastVote(vote) => format!("voted to {vote}"),
+
+            // Auth commands
+            Self::Register { username, .. } => format!("registered as {username}"),
+            Self::Login { username, .. } => format!("logged in as {username}"),
+            Self::RefreshToken { .. } => "refreshed token".to_string(),
+            Self::Logout => "logged out".to_string(),
+
+            // 2FA commands
+            Self::Enable2FA { .. } => "enabled 2FA".to_string(),
+            Self::Verify2FA { .. } => "verified 2FA code".to_string(),
+
+            // Password reset
+            Self::RequestPasswordReset { email } => format!("requested password reset for {email}"),
+            Self::ResetPassword { email, .. } => format!("reset password for {email}"),
+
+            // Table management
+            Self::CreateTable { config } => format!("created table '{}'", config.name),
+            Self::ListTables { .. } => "listed tables".to_string(),
+            Self::JoinTable { table_id, buy_in, .. } => {
+                format!("joined table {} with buy-in {}", table_id, buy_in)
+            }
+            Self::LeaveTable { table_id } => format!("left table {}", table_id),
+            Self::JoinWaitlist { table_id } => format!("joined waitlist for table {}", table_id),
+            Self::LeaveWaitlist { table_id } => format!("left waitlist for table {}", table_id),
+            Self::SpectateTable { table_id } => format!("spectating table {}", table_id),
+            Self::StopSpectating { table_id } => format!("stopped spectating table {}", table_id),
+
+            // Wallet
+            Self::GetBalance => "requested balance".to_string(),
+            Self::ClaimFaucet => "claimed faucet".to_string(),
+            Self::GetTransactionHistory { .. } => "requested transaction history".to_string(),
+
+            // Chat
+            Self::SendChatMessage { table_id, .. } => format!("sent chat to table {}", table_id),
+            Self::MuteUser { user_id, .. } => format!("muted user {}", user_id),
+            Self::KickUser { user_id, .. } => format!("kicked user {}", user_id),
+
+            // Multi-table game commands
+            Self::TakeActionAtTable { table_id, action } => {
+                format!("took action {} at table {}", action, table_id)
+            }
+            Self::CastVoteAtTable { table_id, vote } => {
+                format!("voted to {} at table {}", vote, table_id)
+            }
+            Self::StartGameAtTable { table_id } => format!("started game at table {}", table_id),
+            Self::ShowHandAtTable { table_id } => format!("showed hand at table {}", table_id),
         };
-        write!(f, "{repr}")
+        write!(f, "{}", repr)
     }
 }
 
@@ -96,6 +334,7 @@ impl fmt::Display for ClientMessage {
 /// A message from the poker server to a poker client.
 #[derive(Debug, Deserialize, Serialize)]
 pub enum ServerMessage {
+    // === Legacy Messages (V1) ===
     /// An acknowledgement of a client message, signaling that the client's
     /// command was successfully processed by the game thread.
     Ack(ClientMessage),
@@ -108,17 +347,158 @@ pub enum ServerMessage {
     GameView(GameView),
     /// The game state represented as a string.
     Status(String),
-    /// A sginal indicating that it's the user's turn.
+    /// A signal indicating that it's the user's turn.
     TurnSignal(ActionChoices),
     /// An indication that the poker client sent a message that was read
     /// properly, but the type of action that it relayed was invalid
     /// for the game state, resulting in a user error.
     UserError(UserError),
+
+    // === Authentication Responses (V2) ===
+    /// Registration successful
+    RegisterSuccess {
+        user_id: i64,
+    },
+    /// Login successful with session tokens
+    LoginSuccess {
+        session: SessionTokens,
+        user: User,
+        wallet_balance: i64,
+    },
+    /// Token refresh successful
+    RefreshSuccess {
+        session: SessionTokens,
+    },
+    /// Logout successful
+    LogoutSuccess,
+
+    // === 2FA Responses ===
+    /// 2FA is required for this account
+    TwoFactorRequired,
+    /// 2FA enabled successfully
+    TwoFactorEnabled {
+        backup_codes: Vec<String>,
+    },
+    /// 2FA code verified successfully
+    TwoFactorVerified,
+
+    // === Password Reset Responses ===
+    /// Password reset code sent to email
+    PasswordResetCodeSent,
+    /// Password reset successful
+    PasswordResetSuccess,
+
+    // === Table Responses (V2) ===
+    /// Table created successfully
+    TableCreated {
+        table_id: TableId,
+    },
+    /// List of tables matching filter
+    TableList {
+        tables: Vec<TableInfo>,
+    },
+    /// Successfully joined table
+    JoinedTable {
+        table_id: TableId,
+    },
+    /// Successfully left table
+    LeftTable {
+        table_id: TableId,
+        chips_returned: i64,
+    },
+    /// Joined table waitlist
+    JoinedWaitlist {
+        table_id: TableId,
+        position: usize,
+    },
+    /// Left table waitlist
+    LeftWaitlist {
+        table_id: TableId,
+    },
+    /// Now spectating table
+    SpectatingTable {
+        table_id: TableId,
+    },
+    /// Stopped spectating table
+    StoppedSpectating {
+        table_id: TableId,
+    },
+
+    // === Wallet Responses (V2) ===
+    /// Current wallet balance
+    Balance {
+        amount: i64,
+        currency: String,
+    },
+    /// Faucet claimed successfully
+    FaucetClaimed {
+        amount: i64,
+        next_claim: DateTime<Utc>,
+    },
+    /// Transaction history
+    TransactionHistory {
+        entries: Vec<WalletEntry>,
+    },
+
+    // === Chat Messages (V2) ===
+    /// Chat message from a user
+    ChatMessage {
+        table_id: TableId,
+        user_id: i64,
+        username: String,
+        message: String,
+        timestamp: DateTime<Utc>,
+    },
+    /// User was muted
+    UserMuted {
+        table_id: TableId,
+        user_id: i64,
+    },
+    /// User was kicked
+    UserKicked {
+        table_id: TableId,
+        user_id: i64,
+    },
+
+    // === Multi-Table Game Messages (V2) ===
+    /// Game view for a specific table
+    TableGameView {
+        table_id: TableId,
+        view: GameView,
+    },
+    /// Turn signal for a specific table
+    TableTurnSignal {
+        table_id: TableId,
+        action_choices: ActionChoices,
+    },
+    /// Game event at a specific table
+    TableGameEvent {
+        table_id: TableId,
+        event: GameEvent,
+    },
+    /// Status message for a specific table
+    TableStatus {
+        table_id: TableId,
+        message: String,
+    },
+
+    // === Error Responses (V2) ===
+    /// Authentication error
+    AuthError(String),
+    /// Wallet error
+    WalletError(String),
+    /// Table error
+    TableError(String),
+    /// Rate limit exceeded
+    RateLimitError {
+        retry_after: u64,
+    },
 }
 
 impl fmt::Display for ServerMessage {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let repr = match &self {
+            // Legacy messages
             Self::Ack(msg) => msg.to_string(),
             Self::ClientError(error) => error.to_string(),
             Self::GameEvent(event) => event.to_string(),
@@ -126,8 +506,67 @@ impl fmt::Display for ServerMessage {
             Self::Status(status) => status.to_string(),
             Self::TurnSignal(action_choices) => action_choices.to_string(),
             Self::UserError(error) => error.to_string(),
+
+            // Auth responses
+            Self::RegisterSuccess { user_id } => format!("registration successful (user_id: {})", user_id),
+            Self::LoginSuccess { user, .. } => format!("login successful (username: {})", user.username),
+            Self::RefreshSuccess { .. } => "token refreshed".to_string(),
+            Self::LogoutSuccess => "logout successful".to_string(),
+
+            // 2FA responses
+            Self::TwoFactorRequired => "2FA required".to_string(),
+            Self::TwoFactorEnabled { .. } => "2FA enabled".to_string(),
+            Self::TwoFactorVerified => "2FA verified".to_string(),
+
+            // Password reset
+            Self::PasswordResetCodeSent => "password reset code sent".to_string(),
+            Self::PasswordResetSuccess => "password reset successful".to_string(),
+
+            // Table responses
+            Self::TableCreated { table_id } => format!("table {} created", table_id),
+            Self::TableList { tables } => format!("{} tables available", tables.len()),
+            Self::JoinedTable { table_id } => format!("joined table {}", table_id),
+            Self::LeftTable { table_id, chips_returned } => {
+                format!("left table {} with {} chips", table_id, chips_returned)
+            }
+            Self::JoinedWaitlist { table_id, position } => {
+                format!("joined waitlist for table {} (position: {})", table_id, position)
+            }
+            Self::LeftWaitlist { table_id } => format!("left waitlist for table {}", table_id),
+            Self::SpectatingTable { table_id } => format!("spectating table {}", table_id),
+            Self::StoppedSpectating { table_id } => format!("stopped spectating table {}", table_id),
+
+            // Wallet responses
+            Self::Balance { amount, currency } => format!("balance: {} {}", amount, currency),
+            Self::FaucetClaimed { amount, .. } => format!("faucet claimed: {} chips", amount),
+            Self::TransactionHistory { entries } => format!("{} transactions", entries.len()),
+
+            // Chat messages
+            Self::ChatMessage { username, message, .. } => format!("{}: {}", username, message),
+            Self::UserMuted { user_id, .. } => format!("user {} muted", user_id),
+            Self::UserKicked { user_id, .. } => format!("user {} kicked", user_id),
+
+            // Multi-table game messages
+            Self::TableGameView { table_id, .. } => format!("game view for table {}", table_id),
+            Self::TableTurnSignal { table_id, action_choices } => {
+                format!("your turn at table {} ({})", table_id, action_choices)
+            }
+            Self::TableGameEvent { table_id, event } => {
+                format!("table {}: {}", table_id, event)
+            }
+            Self::TableStatus { table_id, message } => {
+                format!("table {}: {}", table_id, message)
+            }
+
+            // Error responses
+            Self::AuthError(error) => format!("auth error: {}", error),
+            Self::WalletError(error) => format!("wallet error: {}", error),
+            Self::TableError(error) => format!("table error: {}", error),
+            Self::RateLimitError { retry_after } => {
+                format!("rate limited: retry after {} seconds", retry_after)
+            }
         };
-        write!(f, "{repr}")
+        write!(f, "{}", repr)
     }
 }
 

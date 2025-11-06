@@ -74,7 +74,7 @@ pub use security::{
 
 /// Networking components for client-server communication.
 pub mod net;
-pub use net::{client::Client, messages, server, utils};
+pub use net::{client::Client, messages, protocol_version, server, utils};
 
 /// Core game logic, entities, and state machine.
 pub mod game;
