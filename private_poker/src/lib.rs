@@ -37,6 +37,23 @@
 //! let game = PokerState::new();
 //! ```
 
+/// Database components for PostgreSQL connection management.
+pub mod db;
+pub use db::{Database, DatabaseConfig};
+
+/// Authentication components for user management and session handling.
+pub mod auth;
+pub use auth::{
+    AuthError, AuthManager, AuthResult, LoginRequest, RegisterRequest, SessionTokens, User, UserId,
+};
+
+/// Wallet components for chip management with double-entry ledger and escrow.
+pub mod wallet;
+pub use wallet::{
+    EntryDirection, EntryType, FaucetClaim, TableEscrow, TableId, Wallet, WalletEntry,
+    WalletError, WalletManager, WalletResult,
+};
+
 /// Networking components for client-server communication.
 pub mod net;
 pub use net::{client::Client, messages, server, utils};
