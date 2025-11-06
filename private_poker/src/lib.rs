@@ -54,6 +54,13 @@ pub use wallet::{
     WalletError, WalletManager, WalletResult,
 };
 
+/// Table components for multi-table support with async actor model.
+pub mod table;
+pub use table::{
+    BotDifficulty, TableActor, TableConfig, TableHandle, TableManager, TableMessage,
+    TableMetadata, TableResponse, TableSpeed, TableStateResponse,
+};
+
 /// Networking components for client-server communication.
 pub mod net;
 pub use net::{client::Client, messages, server, utils};
