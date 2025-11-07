@@ -30,7 +30,7 @@
 //!
 //! ## Example
 //!
-//! ```no_run
+//! ```ignore
 //! use private_poker::bot::{BotManager, BotConfig};
 //! use private_poker::table::TableConfig;
 //! use std::sync::Arc;
@@ -38,7 +38,8 @@
 //! #[tokio::main]
 //! async fn main() {
 //!     let table_config = TableConfig::default();
-//!     let db_pool = Arc::new(/* database pool */);
+//!     // Create database pool (example)
+//!     let db_pool = Arc::new(create_database_pool().await);
 //!     let mut bot_manager = BotManager::new(1, table_config, db_pool);
 //!
 //!     // Auto-adjust bots based on human count

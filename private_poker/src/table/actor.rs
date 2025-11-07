@@ -6,10 +6,11 @@ use super::{
 };
 use crate::{
     bot::BotManager,
-    game::{PokerState, entities::User},
+    game::{PokerState, entities::{Username, Action}, GameStateManagement, PhaseIndependentUserManagement, PhaseDependentUserManagement},
     wallet::{TableId, WalletManager},
 };
 use sqlx::PgPool;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::{
     sync::mpsc,
@@ -61,8 +62,13 @@ pub struct TableActor {
     wallet_manager: Arc<WalletManager>,
 
     /// Bot manager for automatic bot spawning
-    #[allow(dead_code)]
     bot_manager: BotManager,
+
+    /// User ID to Username mapping
+    user_mapping: HashMap<i64, Username>,
+
+    /// Username to User ID reverse mapping
+    username_mapping: HashMap<Username, i64>,
 
     /// Is table paused
     is_paused: bool,
@@ -71,7 +77,7 @@ pub struct TableActor {
     is_closed: bool,
 
     /// Last top-up times (user_id -> hand_count)
-    top_up_tracker: std::collections::HashMap<i64, u32>,
+    top_up_tracker: HashMap<i64, u32>,
 
     /// Current hand count
     hand_count: u32,
@@ -111,9 +117,11 @@ impl TableActor {
             inbox,
             wallet_manager,
             bot_manager,
+            user_mapping: HashMap::new(),
+            username_mapping: HashMap::new(),
             is_paused: false,
             is_closed: false,
-            top_up_tracker: std::collections::HashMap::new(),
+            top_up_tracker: HashMap::new(),
             hand_count: 0,
         };
 
@@ -219,13 +227,12 @@ impl TableActor {
             }
 
             TableMessage::SendChat {
-                user_id,
+                user_id: _user_id,
                 message: _message,
                 response,
             } => {
-                // TODO: Implement chat with rate limiting and profanity filter
-                let result = self.handle_chat(user_id).await;
-                let _ = response.send(result);
+                // Chat not implemented yet - requires rate limiting and profanity filter
+                let _ = response.send(TableResponse::Error("Chat not implemented".to_string()));
             }
 
             TableMessage::TopUp {
@@ -257,7 +264,7 @@ impl TableActor {
             }
 
             TableMessage::ProcessBotTurn => {
-                // TODO: Implement bot turn processing
+                self.handle_bot_turns().await;
             }
         }
 
@@ -274,11 +281,18 @@ impl TableActor {
     ) -> TableResponse {
         // Check if table is private and verify access
         if self.config.is_private
-            && let Some(ref _required_hash) = self.config.passphrase_hash
+            && let Some(ref required_hash) = self.config.passphrase_hash
         {
-            // TODO: Verify passphrase hash
-            if passphrase.is_none() {
-                return TableResponse::AccessDenied;
+            match passphrase {
+                Some(ref pass) => {
+                    // Simple string comparison (in production, use argon2 verify)
+                    if pass != required_hash {
+                        return TableResponse::AccessDenied;
+                    }
+                }
+                None => {
+                    return TableResponse::AccessDenied;
+                }
             }
         }
 
@@ -316,22 +330,42 @@ impl TableActor {
             .await
         {
             Ok(_) => {
-                // Add user to game
-                let _user = User {
-                    name: username.into(),
-                    money: buy_in_amount as u32,
-                };
+                // Add user to game state
+                let poker_username: Username = username.clone().into();
 
-                // TODO: Integrate with PokerState to add user
-                // For now, just return success
-                log::info!(
-                    "User {} joined table {} with {} chips",
-                    user_id,
-                    self.id,
-                    buy_in_amount
-                );
+                match self.state.new_user(&poker_username) {
+                    Ok(_) => {
+                        // Store mappings
+                        self.user_mapping.insert(user_id, poker_username.clone());
+                        self.username_mapping.insert(poker_username, user_id);
 
-                TableResponse::Success
+                        // Adjust bot count now that a human joined
+                        let human_count = self.user_mapping.len();
+                        let _ = self.bot_manager.adjust_bot_count(human_count).await;
+
+                        log::info!(
+                            "User {} ({}) joined table {} with {} chips",
+                            user_id,
+                            username,
+                            self.id,
+                            buy_in_amount
+                        );
+
+                        TableResponse::Success
+                    }
+                    Err(e) => {
+                        // Rollback the transfer
+                        let rollback_key = format!("rollback_join_{}_{}", user_id, chrono::Utc::now().timestamp());
+                        let _ = self.wallet_manager.transfer_from_escrow(
+                            user_id,
+                            self.id,
+                            buy_in_amount,
+                            rollback_key,
+                        ).await;
+
+                        TableResponse::Error(format!("Failed to join game: {:?}", e))
+                    }
+                }
             }
             Err(e) => TableResponse::Error(format!("Transfer failed: {}", e)),
         }
@@ -339,86 +373,203 @@ impl TableActor {
 
     /// Handle leave table request
     async fn handle_leave(&mut self, user_id: i64) -> TableResponse {
-        // TODO: Get user's current chip count from PokerState
-        let chip_count = 0i64; // Placeholder
-
-        // Transfer chips back from escrow
-        let idempotency_key = format!("leave_{}_{}", user_id, chrono::Utc::now().timestamp());
-        match self
-            .wallet_manager
-            .transfer_from_escrow(user_id, self.id, chip_count, idempotency_key)
-            .await
-        {
-            Ok(_) => {
-                // Remove user from game
-                // TODO: Integrate with PokerState to remove user
-                log::info!("User {} left table {}", user_id, self.id);
-                TableResponse::Success
+        // Get username from mapping
+        let username = match self.user_mapping.get(&user_id) {
+            Some(u) => u.clone(),
+            None => {
+                return TableResponse::Error("User not at table".to_string());
             }
-            Err(e) => TableResponse::Error(format!("Transfer failed: {}", e)),
+        };
+
+        // Get user's current chip count from game state
+        let views = self.state.get_views();
+        let user_view = views.get(&username);
+
+        let chip_count = match user_view {
+            Some(view) => {
+                // Find the player in the view
+                view.players.iter()
+                    .find(|p| p.user.name == username)
+                    .map(|p| p.user.money as i64)
+                    .unwrap_or(0)
+            }
+            None => 0,
+        };
+
+        // Remove user from game state
+        match self.state.remove_user(&username) {
+            Ok(_) => {
+                // Transfer chips back from escrow
+                let idempotency_key = format!("leave_{}_{}", user_id, chrono::Utc::now().timestamp());
+                match self
+                    .wallet_manager
+                    .transfer_from_escrow(user_id, self.id, chip_count, idempotency_key)
+                    .await
+                {
+                    Ok(_) => {
+                        // Remove mappings
+                        self.user_mapping.remove(&user_id);
+                        self.username_mapping.remove(&username);
+
+                        // Adjust bot count now that a human left
+                        let human_count = self.user_mapping.len();
+                        let _ = self.bot_manager.adjust_bot_count(human_count).await;
+
+                        log::info!("User {} left table {} with {} chips", user_id, self.id, chip_count);
+                        TableResponse::Success
+                    }
+                    Err(e) => TableResponse::Error(format!("Transfer failed: {}", e)),
+                }
+            }
+            Err(e) => TableResponse::Error(format!("Failed to leave game: {:?}", e)),
         }
     }
 
     /// Handle player action
     async fn handle_action(
         &mut self,
-        _user_id: i64,
-        _action: crate::game::entities::Action,
+        user_id: i64,
+        action: Action,
     ) -> TableResponse {
-        // TODO: Validate it's user's turn and action is valid
-        // TODO: Apply action to PokerState
-        TableResponse::Success
+        // Get username from mapping
+        let username = match self.user_mapping.get(&user_id) {
+            Some(u) => u.clone(),
+            None => {
+                return TableResponse::Error("User not at table".to_string());
+            }
+        };
+
+        // Validate it's the user's turn
+        if let Some(next_username) = self.state.get_next_action_username() {
+            if next_username != username {
+                return TableResponse::Error("Not your turn".to_string());
+            }
+        } else {
+            return TableResponse::Error("No actions allowed right now".to_string());
+        }
+
+        // Apply action to game state
+        match self.state.take_action(&username, action) {
+            Ok(_) => TableResponse::Success,
+            Err(e) => TableResponse::Error(format!("Invalid action: {:?}", e)),
+        }
     }
 
     /// Get current table state
-    async fn get_state(&self, _user_id: Option<i64>) -> TableStateResponse {
-        // TODO: Extract state from PokerState
+    async fn get_state(&self, user_id: Option<i64>) -> TableStateResponse {
+        // Get game views
+        let views = self.state.get_views();
+
+        // Extract summary information
+        let player_count = views.len();
+        let mut pot_size = 0;
+        let mut phase = "Lobby".to_string();
+        let mut players = vec![];
+
+        // Get view for requesting user or any view if no user specified
+        if let Some(uid) = user_id
+            && let Some(username) = self.user_mapping.get(&uid)
+            && let Some(view) = views.get(username)
+        {
+            pot_size = view.pot.size as i64;
+            phase = if player_count > 0 { "Playing".to_string() } else { "Lobby".to_string() };
+            players = view.players.iter().map(|p| p.user.name.to_string()).collect();
+        } else if let Some((_, view)) = views.iter().next() {
+            pot_size = view.pot.size as i64;
+            phase = if player_count > 0 { "Playing".to_string() } else { "Lobby".to_string() };
+            players = view.players.iter().map(|p| p.user.name.to_string()).collect();
+        }
+
         TableStateResponse {
             table_id: self.id,
             table_name: self.config.name.clone(),
-            player_count: 0,
+            player_count,
             max_players: self.config.max_players,
-            waitlist_count: 0,
-            spectator_count: 0,
+            waitlist_count: 0, // TODO: track waitlist separately
+            spectator_count: 0, // TODO: track spectators separately
             small_blind: self.config.small_blind,
             big_blind: self.config.big_blind,
-            pot_size: 0,
+            pot_size,
             is_active: !self.is_paused,
-            phase: "Lobby".to_string(),
-            players: vec![],
+            phase,
+            players,
             is_private: self.config.is_private,
             speed: self.config.speed.to_string(),
         }
     }
 
     /// Handle spectate request
-    async fn handle_spectate(&mut self, _user_id: i64, _username: String) -> TableResponse {
-        // TODO: Add spectator to PokerState
-        TableResponse::Success
+    async fn handle_spectate(&mut self, user_id: i64, username: String) -> TableResponse {
+        let poker_username: Username = username.into();
+
+        match self.state.spectate_user(&poker_username) {
+            Ok(_) => {
+                // Store mapping
+                self.user_mapping.insert(user_id, poker_username.clone());
+                self.username_mapping.insert(poker_username, user_id);
+                TableResponse::Success
+            }
+            Err(e) => TableResponse::Error(format!("Failed to spectate: {:?}", e)),
+        }
     }
 
     /// Handle stop spectating request
-    async fn handle_stop_spectating(&mut self, _user_id: i64) -> TableResponse {
-        // TODO: Remove spectator from PokerState
-        TableResponse::Success
+    async fn handle_stop_spectating(&mut self, user_id: i64) -> TableResponse {
+        // Get username from mapping
+        let username = match self.user_mapping.get(&user_id) {
+            Some(u) => u.clone(),
+            None => {
+                return TableResponse::Error("User not spectating".to_string());
+            }
+        };
+
+        // Remove spectator
+        match self.state.remove_user(&username) {
+            Ok(_) => {
+                // Remove mappings
+                self.user_mapping.remove(&user_id);
+                self.username_mapping.remove(&username);
+                TableResponse::Success
+            }
+            Err(e) => TableResponse::Error(format!("Failed to stop spectating: {:?}", e)),
+        }
     }
 
     /// Handle join waitlist request
-    async fn handle_join_waitlist(&mut self, _user_id: i64, _username: String) -> TableResponse {
-        // TODO: Add to waitlist in PokerState
-        TableResponse::Success
+    async fn handle_join_waitlist(&mut self, user_id: i64, username: String) -> TableResponse {
+        let poker_username: Username = username.into();
+
+        match self.state.waitlist_user(&poker_username) {
+            Ok(_) => {
+                // Store mapping
+                self.user_mapping.insert(user_id, poker_username.clone());
+                self.username_mapping.insert(poker_username, user_id);
+                TableResponse::Success
+            }
+            Err(e) => TableResponse::Error(format!("Failed to join waitlist: {:?}", e)),
+        }
     }
 
     /// Handle leave waitlist request
-    async fn handle_leave_waitlist(&mut self, _user_id: i64) -> TableResponse {
-        // TODO: Remove from waitlist in PokerState
-        TableResponse::Success
-    }
+    async fn handle_leave_waitlist(&mut self, user_id: i64) -> TableResponse {
+        // Get username from mapping
+        let username = match self.user_mapping.get(&user_id) {
+            Some(u) => u.clone(),
+            None => {
+                return TableResponse::Error("User not on waitlist".to_string());
+            }
+        };
 
-    /// Handle chat message
-    async fn handle_chat(&mut self, _user_id: i64) -> TableResponse {
-        // TODO: Implement chat with rate limiting
-        TableResponse::Success
+        // Remove from waitlist
+        match self.state.remove_user(&username) {
+            Ok(_) => {
+                // Remove mappings
+                self.user_mapping.remove(&user_id);
+                self.username_mapping.remove(&username);
+                TableResponse::Success
+            }
+            Err(e) => TableResponse::Error(format!("Failed to leave waitlist: {:?}", e)),
+        }
     }
 
     /// Handle top-up request
@@ -439,9 +590,50 @@ impl TableActor {
             return TableResponse::Error("Amount must be positive".to_string());
         }
 
-        // TODO: Transfer chips and update player stack
-        self.top_up_tracker.insert(user_id, self.hand_count);
-        TableResponse::Success
+        // Get username
+        let _username = match self.user_mapping.get(&user_id) {
+            Some(u) => u.clone(),
+            None => {
+                return TableResponse::Error("User not at table".to_string());
+            }
+        };
+
+        // Transfer chips from wallet to escrow
+        let idempotency_key = format!("topup_{}_{}", user_id, chrono::Utc::now().timestamp());
+        match self
+            .wallet_manager
+            .transfer_to_escrow(user_id, self.id, amount, idempotency_key)
+            .await
+        {
+            Ok(_) => {
+                // TODO: Update player stack in PokerState
+                self.top_up_tracker.insert(user_id, self.hand_count);
+                TableResponse::Success
+            }
+            Err(e) => TableResponse::Error(format!("Transfer failed: {}", e)),
+        }
+    }
+
+    /// Handle bot turns
+    async fn handle_bot_turns(&mut self) {
+        // Check if it's a bot's turn
+        if let Some(next_username) = self.state.get_next_action_username() {
+            // Check if this username is a bot (not in username_mapping means it's a bot)
+            if !self.username_mapping.contains_key(&next_username) {
+                // It's a bot's turn
+                // TODO: Implement bot decision making
+                // For now, bots will just check/fold
+                if let Some(action_choices) = self.state.get_action_choices() {
+                    let action = if action_choices.contains(&Action::Check) {
+                        Action::Check
+                    } else {
+                        Action::Fold
+                    };
+                    log::debug!("Bot {} taking action: {:?}", next_username, action);
+                    let _ = self.state.take_action(&next_username, action);
+                }
+            }
+        }
     }
 
     /// Advance game state (called periodically)
@@ -450,12 +642,31 @@ impl TableActor {
             return;
         }
 
+        // Track previous player count to detect hand completion
+        let prev_views = self.state.get_views();
+        let prev_count = prev_views.len();
+
         // Advance poker state FSM (take ownership and replace)
         let state = std::mem::take(&mut self.state);
         self.state = state.step();
 
-        // TODO: Check if hand completed and increment hand_count
-        // TODO: Handle bot turns
-        // TODO: Handle timeouts
+        // Check if hand completed (player count changed suggests state transition)
+        let curr_views = self.state.get_views();
+        let curr_count = curr_views.len();
+
+        // Simple heuristic: if we have players and count changed, a hand might have completed
+        if prev_count > 0 && prev_count != curr_count {
+            self.hand_count += 1;
+            log::debug!("Table {} hand {} completed", self.id, self.hand_count);
+        }
+
+        // Process bot turns if needed
+        self.handle_bot_turns().await;
+
+        // Drain events (logging only for now)
+        let events = self.state.drain_events();
+        if !events.is_empty() {
+            log::debug!("Table {} generated {} events", self.id, events.len());
+        }
     }
 }

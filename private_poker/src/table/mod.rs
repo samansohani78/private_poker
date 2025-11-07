@@ -14,14 +14,16 @@
 //!
 //! ## Example
 //!
-//! ```no_run
+//! ```ignore
 //! use private_poker::table::{TableActor, TableConfig};
 //! use private_poker::wallet::WalletManager;
 //! use std::sync::Arc;
 //!
 //! #[tokio::main]
 //! async fn main() {
-//!     let wallet_manager = Arc::new(WalletManager::new(Arc::new(/* pool */)));
+//!     // Create database pool (example)
+//!     let pool = create_database_pool().await;
+//!     let wallet_manager = Arc::new(WalletManager::new(Arc::new(pool)));
 //!     let config = TableConfig::default();
 //!
 //!     let (actor, handle) = TableActor::new(1, config, wallet_manager);

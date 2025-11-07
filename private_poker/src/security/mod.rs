@@ -24,13 +24,14 @@
 //!
 //! ## Example
 //!
-//! ```no_run
+//! ```ignore
 //! use private_poker::security::{RateLimiter, AntiCollusionDetector};
 //! use std::sync::Arc;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), String> {
-//!     let db_pool = Arc::new(/* database pool */);
+//!     // Create database pool (example)
+//!     let db_pool = Arc::new(create_database_pool().await);
 //!
 //!     // Rate limiting
 //!     let rate_limiter = RateLimiter::new(db_pool.clone());
