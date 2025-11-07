@@ -143,7 +143,10 @@ impl RateLimiter {
         // Check active connection limit
         let active = self.active_connections.entry(ip).or_insert(0);
         if *active >= MAX_CONNECTIONS_PER_IP {
-            warn!("Rate limit: IP {} has {} active connections (max {})", ip, active, MAX_CONNECTIONS_PER_IP);
+            warn!(
+                "Rate limit: IP {} has {} active connections (max {})",
+                ip, active, MAX_CONNECTIONS_PER_IP
+            );
             return false;
         }
 
@@ -159,15 +162,24 @@ impl RateLimiter {
 
         // Check rate limit within window
         if timestamps.len() >= MAX_CONNECTIONS_PER_WINDOW {
-            warn!("Rate limit: IP {} exceeded {} connections per {} seconds",
-                  ip, MAX_CONNECTIONS_PER_WINDOW, RATE_LIMIT_WINDOW.as_secs());
+            warn!(
+                "Rate limit: IP {} exceeded {} connections per {} seconds",
+                ip,
+                MAX_CONNECTIONS_PER_WINDOW,
+                RATE_LIMIT_WINDOW.as_secs()
+            );
             return false;
         }
 
         // Allow connection
         timestamps.push_back(now);
         *active += 1;
-        debug!("Rate limiter: IP {} now has {} active connections, {} in window", ip, active, timestamps.len());
+        debug!(
+            "Rate limiter: IP {} now has {} active connections, {} in window",
+            ip,
+            active,
+            timestamps.len()
+        );
         true
     }
 
@@ -177,7 +189,10 @@ impl RateLimiter {
         let should_remove = if let Some(count) = self.active_connections.get_mut(&ip) {
             *count = count.saturating_sub(1);
             let remaining = *count;
-            debug!("Rate limiter: IP {} connection released, {} remaining", ip, remaining);
+            debug!(
+                "Rate limiter: IP {} connection released, {} remaining",
+                ip, remaining
+            );
             remaining == 0
         } else {
             false
@@ -257,7 +272,12 @@ impl TokenManager {
     ///
     /// This transfers ownership of the stream to the token manager, allowing
     /// deallocation of the stream wheenver the token is recycled.
-    pub fn associate_token_and_stream(&mut self, token: Token, stream: TcpStream, addr: SocketAddr) {
+    pub fn associate_token_and_stream(
+        &mut self,
+        token: Token,
+        stream: TcpStream,
+        addr: SocketAddr,
+    ) {
         self.token_to_addr.insert(token, addr);
         let unconfirmed_client = UnconfirmedClient::new(stream);
         self.unconfirmed_tokens.insert(token, unconfirmed_client);
@@ -410,7 +430,10 @@ impl TokenManager {
                     recyclables.push_back((token, unconfirmed_client.stream));
                 }
                 None => {
-                    error!("Token state inconsistency: token {:?} marked for recycling but not in unconfirmed_tokens", token);
+                    error!(
+                        "Token state inconsistency: token {:?} marked for recycling but not in unconfirmed_tokens",
+                        token
+                    );
                     // Skip this token and continue with others
                 }
             }
@@ -521,7 +544,10 @@ pub fn run(addr: SocketAddr, config: PokerConfig) -> Result<(), Error> {
 
                         // Check rate limiting before accepting connection
                         if !token_manager.allow_connection(peer_addr) {
-                            warn!("Connection from {} rejected due to rate limiting", peer_addr);
+                            warn!(
+                                "Connection from {} rejected due to rate limiting",
+                                peer_addr
+                            );
                             // Drop the stream immediately
                             drop(stream);
                             continue;
@@ -985,7 +1011,10 @@ pub fn run(addr: SocketAddr, config: PokerConfig) -> Result<(), Error> {
                             }),
                         // V2 commands not yet implemented - will be handled by multi-table server
                         _ => {
-                            warn!("Received V2 command {:?} but multi-table server not yet implemented", msg.command);
+                            warn!(
+                                "Received V2 command {:?} but multi-table server not yet implemented",
+                                msg.command
+                            );
                             Err(UserError::InvalidAction)
                         }
                     };
@@ -1031,7 +1060,7 @@ mod tests {
     use crate::entities::Username;
     use crate::net::messages::ClientError;
 
-    use super::{TokenManager, RateLimiter};
+    use super::{RateLimiter, TokenManager};
     use std::net::SocketAddr;
 
     fn get_server() -> TcpListener {
@@ -1306,7 +1335,9 @@ mod tests {
 
         // Recycling token should release rate limit slot
         let username = Username::new("test_user");
-        token_manager.associate_token_and_username(token, &username).unwrap();
+        token_manager
+            .associate_token_and_username(token, &username)
+            .unwrap();
         token_manager.recycle_token(token).unwrap();
 
         // After recycling, the connection slot should be released

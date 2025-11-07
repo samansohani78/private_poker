@@ -2,7 +2,7 @@
 //!
 //! Tests registration, login, 2FA, session management, and password reset flows.
 
-use private_poker::auth::{AuthManager, AuthError};
+use private_poker::auth::{AuthError, AuthManager};
 use private_poker::db::{Database, DatabaseConfig};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -191,7 +191,11 @@ async fn test_refresh_token_flow() {
 
     let device_fp = "device123".to_string();
     let (tokens, _user) = auth
-        .login(username.to_string(), password.to_string(), device_fp.clone())
+        .login(
+            username.to_string(),
+            password.to_string(),
+            device_fp.clone(),
+        )
         .await
         .expect("Login should succeed");
 
@@ -203,7 +207,10 @@ async fn test_refresh_token_flow() {
     assert!(result.is_ok(), "Token refresh should succeed");
     let new_tokens = result.unwrap();
     assert!(!new_tokens.access_token.is_empty());
-    assert_ne!(tokens.access_token, new_tokens.access_token, "New access token should be different");
+    assert_ne!(
+        tokens.access_token, new_tokens.access_token,
+        "New access token should be different"
+    );
 
     cleanup_user(&auth, username).await;
 }
@@ -222,7 +229,11 @@ async fn test_logout() {
 
     let device_fp = "device123".to_string();
     let (tokens, user) = auth
-        .login(username.to_string(), password.to_string(), device_fp.clone())
+        .login(
+            username.to_string(),
+            password.to_string(),
+            device_fp.clone(),
+        )
         .await
         .expect("Login should succeed");
 
@@ -232,7 +243,10 @@ async fn test_logout() {
 
     // Try to use refresh token after logout
     let refresh_result = auth.refresh_token(tokens.refresh_token, device_fp).await;
-    assert!(refresh_result.is_err(), "Refresh token should be invalid after logout");
+    assert!(
+        refresh_result.is_err(),
+        "Refresh token should be invalid after logout"
+    );
 
     cleanup_user(&auth, username).await;
 }
@@ -271,7 +285,10 @@ async fn test_concurrent_registrations() {
         cleanup_user(&auth, &username).await;
     }
 
-    assert_eq!(success_count, 10, "All concurrent registrations should succeed");
+    assert_eq!(
+        success_count, 10,
+        "All concurrent registrations should succeed"
+    );
 }
 
 #[tokio::test]
@@ -326,13 +343,21 @@ async fn test_multiple_sessions_same_user() {
 
     // Login from device 1
     let (tokens1, _) = auth
-        .login(username.to_string(), password.to_string(), "device1".to_string())
+        .login(
+            username.to_string(),
+            password.to_string(),
+            "device1".to_string(),
+        )
         .await
         .expect("Login from device 1 should succeed");
 
     // Login from device 2
     let (tokens2, _) = auth
-        .login(username.to_string(), password.to_string(), "device2".to_string())
+        .login(
+            username.to_string(),
+            password.to_string(),
+            "device2".to_string(),
+        )
         .await
         .expect("Login from device 2 should succeed");
 
@@ -341,8 +366,16 @@ async fn test_multiple_sessions_same_user() {
     assert_ne!(tokens1.refresh_token, tokens2.refresh_token);
 
     // Both tokens should be valid
-    assert!(auth.validate_access_token(&tokens1.access_token).await.is_ok());
-    assert!(auth.validate_access_token(&tokens2.access_token).await.is_ok());
+    assert!(
+        auth.validate_access_token(&tokens1.access_token)
+            .await
+            .is_ok()
+    );
+    assert!(
+        auth.validate_access_token(&tokens2.access_token)
+            .await
+            .is_ok()
+    );
 
     cleanup_user(&auth, username).await;
 }

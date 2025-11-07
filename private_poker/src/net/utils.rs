@@ -15,7 +15,10 @@ pub fn read_prefixed<T: DeserializeOwned, R: Read>(reader: &mut R) -> io::Result
     if len > MAX_MESSAGE_SIZE {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("message size {} exceeds maximum allowed size of {} bytes", len, MAX_MESSAGE_SIZE)
+            format!(
+                "message size {} exceeds maximum allowed size of {} bytes",
+                len, MAX_MESSAGE_SIZE
+            ),
         ));
     }
 
@@ -50,7 +53,11 @@ pub fn write_prefixed<T: Serialize, W: Write>(writer: &mut W, value: &T) -> io::
             if serialized.len() > MAX_MESSAGE_SIZE {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("serialized message size {} exceeds maximum allowed size of {} bytes", serialized.len(), MAX_MESSAGE_SIZE)
+                    format!(
+                        "serialized message size {} exceeds maximum allowed size of {} bytes",
+                        serialized.len(),
+                        MAX_MESSAGE_SIZE
+                    ),
                 ));
             }
 
@@ -189,8 +196,8 @@ mod tests {
 
     #[test]
     fn write_and_read_complex_struct() {
-        use crate::net::messages::{UserCommand, ClientMessage};
         use crate::game::entities::Username;
+        use crate::net::messages::{ClientMessage, UserCommand};
 
         let (mut client, mut stream) = setup();
 
@@ -228,7 +235,10 @@ mod tests {
         assert!(write_prefixed(&mut stream, &false).is_ok());
 
         assert_eq!(read_prefixed::<bool, TcpStream>(&mut client).unwrap(), true);
-        assert_eq!(read_prefixed::<bool, TcpStream>(&mut client).unwrap(), false);
+        assert_eq!(
+            read_prefixed::<bool, TcpStream>(&mut client).unwrap(),
+            false
+        );
     }
 
     #[test]
@@ -324,8 +334,8 @@ mod tests {
 
     #[test]
     fn stress_test_complex_message_structures() {
+        use crate::game::entities::{Action, Username, Vote};
         use crate::net::messages::{ClientMessage, UserCommand};
-        use crate::game::entities::{Username, Action, Vote};
 
         let (mut client, mut stream) = setup();
 

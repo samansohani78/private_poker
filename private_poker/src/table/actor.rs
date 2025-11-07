@@ -6,14 +6,14 @@ use super::{
 };
 use crate::{
     bot::BotManager,
-    game::{entities::User, PokerState},
+    game::{PokerState, entities::User},
     wallet::{TableId, WalletManager},
 };
 use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::{
     sync::mpsc,
-    time::{interval, Duration},
+    time::{Duration, interval},
 };
 
 /// Table actor handle for sending messages
@@ -61,6 +61,7 @@ pub struct TableActor {
     wallet_manager: Arc<WalletManager>,
 
     /// Bot manager for automatic bot spawning
+    #[allow(dead_code)]
     bot_manager: BotManager,
 
     /// Is table paused
@@ -164,7 +165,9 @@ impl TableActor {
                 passphrase,
                 response,
             } => {
-                let result = self.handle_join(user_id, username, buy_in_amount, passphrase).await;
+                let result = self
+                    .handle_join(user_id, username, buy_in_amount, passphrase)
+                    .await;
                 let _ = response.send(result);
             }
 
@@ -270,12 +273,12 @@ impl TableActor {
         passphrase: Option<String>,
     ) -> TableResponse {
         // Check if table is private and verify access
-        if self.config.is_private {
-            if let Some(ref required_hash) = self.config.passphrase_hash {
-                // TODO: Verify passphrase hash
-                if passphrase.is_none() {
-                    return TableResponse::AccessDenied;
-                }
+        if self.config.is_private
+            && let Some(ref _required_hash) = self.config.passphrase_hash
+        {
+            // TODO: Verify passphrase hash
+            if passphrase.is_none() {
+                return TableResponse::AccessDenied;
             }
         }
 
@@ -357,7 +360,11 @@ impl TableActor {
     }
 
     /// Handle player action
-    async fn handle_action(&mut self, _user_id: i64, _action: crate::game::entities::Action) -> TableResponse {
+    async fn handle_action(
+        &mut self,
+        _user_id: i64,
+        _action: crate::game::entities::Action,
+    ) -> TableResponse {
         // TODO: Validate it's user's turn and action is valid
         // TODO: Apply action to PokerState
         TableResponse::Success
@@ -444,7 +451,7 @@ impl TableActor {
         }
 
         // Advance poker state FSM (take ownership and replace)
-        let state = std::mem::replace(&mut self.state, PokerState::new());
+        let state = std::mem::take(&mut self.state);
         self.state = state.step();
 
         // TODO: Check if hand completed and increment hand_count

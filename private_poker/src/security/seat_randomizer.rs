@@ -83,9 +83,16 @@ impl SeatRandomizer {
     /// # Returns
     ///
     /// * `HashMap<i64, usize>` - New randomized seat assignments
-    pub fn shuffle_seats(&mut self, current_assignments: &HashMap<i64, usize>) -> HashMap<i64, usize> {
+    pub fn shuffle_seats(
+        &mut self,
+        current_assignments: &HashMap<i64, usize>,
+    ) -> HashMap<i64, usize> {
         let user_ids: Vec<i64> = current_assignments.keys().copied().collect();
-        let max_seats = current_assignments.values().max().map(|&v| v + 1).unwrap_or(10);
+        let max_seats = current_assignments
+            .values()
+            .max()
+            .map(|&v| v + 1)
+            .unwrap_or(10);
         self.assign_seats(&user_ids, max_seats)
     }
 }

@@ -25,9 +25,9 @@ impl std::fmt::Display for TableSpeed {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BotDifficulty {
-    Easy,      // Loose-passive, high VPIP (45%), low aggression
-    Standard,  // Balanced, moderate VPIP (30%), TAG-style
-    Tag,       // Tight-aggressive, low VPIP (20%), high aggression
+    Easy,     // Loose-passive, high VPIP (45%), low aggression
+    Standard, // Balanced, moderate VPIP (30%), TAG-style
+    Tag,      // Tight-aggressive, low VPIP (20%), high aggression
 }
 
 impl std::fmt::Display for BotDifficulty {

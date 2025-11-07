@@ -8,10 +8,8 @@ use super::super::game::{
 
 // Import types from other modules
 use crate::auth::{SessionTokens, User};
+use crate::table::{TableConfig, TableSpeed};
 use crate::wallet::WalletEntry;
-use crate::table::{
-    TableConfig, TableSpeed,
-};
 use chrono::{DateTime, Utc};
 
 /// Errors due to the poker client's interaction with the poker server
@@ -147,20 +145,13 @@ pub enum UserCommand {
 
     // === 2FA Commands ===
     /// Enable two-factor authentication
-    Enable2FA {
-        secret: String,
-        code: String,
-    },
+    Enable2FA { secret: String, code: String },
     /// Verify 2FA code
-    Verify2FA {
-        code: String,
-    },
+    Verify2FA { code: String },
 
     // === Password Reset Commands ===
     /// Request password reset email
-    RequestPasswordReset {
-        email: String,
-    },
+    RequestPasswordReset { email: String },
     /// Reset password with code
     ResetPassword {
         email: String,
@@ -170,13 +161,9 @@ pub enum UserCommand {
 
     // === Table Management Commands (V2) ===
     /// Create a new table
-    CreateTable {
-        config: TableConfig,
-    },
+    CreateTable { config: TableConfig },
     /// List available tables with optional filter
-    ListTables {
-        filter: Option<TableFilter>,
-    },
+    ListTables { filter: Option<TableFilter> },
     /// Join a table with buy-in
     JoinTable {
         table_id: TableId,
@@ -184,25 +171,15 @@ pub enum UserCommand {
         passphrase: Option<String>,
     },
     /// Leave a table
-    LeaveTable {
-        table_id: TableId,
-    },
+    LeaveTable { table_id: TableId },
     /// Join table waitlist
-    JoinWaitlist {
-        table_id: TableId,
-    },
+    JoinWaitlist { table_id: TableId },
     /// Leave table waitlist
-    LeaveWaitlist {
-        table_id: TableId,
-    },
+    LeaveWaitlist { table_id: TableId },
     /// Start spectating a table
-    SpectateTable {
-        table_id: TableId,
-    },
+    SpectateTable { table_id: TableId },
     /// Stop spectating
-    StopSpectating {
-        table_id: TableId,
-    },
+    StopSpectating { table_id: TableId },
 
     // === Wallet Commands (V2) ===
     /// Get current wallet balance
@@ -210,47 +187,25 @@ pub enum UserCommand {
     /// Claim daily faucet
     ClaimFaucet,
     /// Get transaction history
-    GetTransactionHistory {
-        limit: usize,
-        offset: usize,
-    },
+    GetTransactionHistory { limit: usize, offset: usize },
 
     // === Chat Commands (V2) ===
     /// Send chat message to table
-    SendChatMessage {
-        table_id: TableId,
-        message: String,
-    },
+    SendChatMessage { table_id: TableId, message: String },
     /// Mute a user at table (owner/mod only)
-    MuteUser {
-        table_id: TableId,
-        user_id: i64,
-    },
+    MuteUser { table_id: TableId, user_id: i64 },
     /// Kick a user from table (owner/mod only)
-    KickUser {
-        table_id: TableId,
-        user_id: i64,
-    },
+    KickUser { table_id: TableId, user_id: i64 },
 
     // === Multi-Table Game Commands (V2) ===
     /// Take action at specific table
-    TakeActionAtTable {
-        table_id: TableId,
-        action: Action,
-    },
+    TakeActionAtTable { table_id: TableId, action: Action },
     /// Cast vote at specific table
-    CastVoteAtTable {
-        table_id: TableId,
-        vote: Vote,
-    },
+    CastVoteAtTable { table_id: TableId, vote: Vote },
     /// Start game at specific table
-    StartGameAtTable {
-        table_id: TableId,
-    },
+    StartGameAtTable { table_id: TableId },
     /// Show hand at specific table
-    ShowHandAtTable {
-        table_id: TableId,
-    },
+    ShowHandAtTable { table_id: TableId },
 }
 
 impl fmt::Display for UserCommand {
@@ -282,7 +237,9 @@ impl fmt::Display for UserCommand {
             // Table management
             Self::CreateTable { config } => format!("created table '{}'", config.name),
             Self::ListTables { .. } => "listed tables".to_string(),
-            Self::JoinTable { table_id, buy_in, .. } => {
+            Self::JoinTable {
+                table_id, buy_in, ..
+            } => {
                 format!("joined table {} with buy-in {}", table_id, buy_in)
             }
             Self::LeaveTable { table_id } => format!("left table {}", table_id),
@@ -356,9 +313,7 @@ pub enum ServerMessage {
 
     // === Authentication Responses (V2) ===
     /// Registration successful
-    RegisterSuccess {
-        user_id: i64,
-    },
+    RegisterSuccess { user_id: i64 },
     /// Login successful with session tokens
     LoginSuccess {
         session: SessionTokens,
@@ -366,9 +321,7 @@ pub enum ServerMessage {
         wallet_balance: i64,
     },
     /// Token refresh successful
-    RefreshSuccess {
-        session: SessionTokens,
-    },
+    RefreshSuccess { session: SessionTokens },
     /// Logout successful
     LogoutSuccess,
 
@@ -376,9 +329,7 @@ pub enum ServerMessage {
     /// 2FA is required for this account
     TwoFactorRequired,
     /// 2FA enabled successfully
-    TwoFactorEnabled {
-        backup_codes: Vec<String>,
-    },
+    TwoFactorEnabled { backup_codes: Vec<String> },
     /// 2FA code verified successfully
     TwoFactorVerified,
 
@@ -390,55 +341,35 @@ pub enum ServerMessage {
 
     // === Table Responses (V2) ===
     /// Table created successfully
-    TableCreated {
-        table_id: TableId,
-    },
+    TableCreated { table_id: TableId },
     /// List of tables matching filter
-    TableList {
-        tables: Vec<TableInfo>,
-    },
+    TableList { tables: Vec<TableInfo> },
     /// Successfully joined table
-    JoinedTable {
-        table_id: TableId,
-    },
+    JoinedTable { table_id: TableId },
     /// Successfully left table
     LeftTable {
         table_id: TableId,
         chips_returned: i64,
     },
     /// Joined table waitlist
-    JoinedWaitlist {
-        table_id: TableId,
-        position: usize,
-    },
+    JoinedWaitlist { table_id: TableId, position: usize },
     /// Left table waitlist
-    LeftWaitlist {
-        table_id: TableId,
-    },
+    LeftWaitlist { table_id: TableId },
     /// Now spectating table
-    SpectatingTable {
-        table_id: TableId,
-    },
+    SpectatingTable { table_id: TableId },
     /// Stopped spectating table
-    StoppedSpectating {
-        table_id: TableId,
-    },
+    StoppedSpectating { table_id: TableId },
 
     // === Wallet Responses (V2) ===
     /// Current wallet balance
-    Balance {
-        amount: i64,
-        currency: String,
-    },
+    Balance { amount: i64, currency: String },
     /// Faucet claimed successfully
     FaucetClaimed {
         amount: i64,
         next_claim: DateTime<Utc>,
     },
     /// Transaction history
-    TransactionHistory {
-        entries: Vec<WalletEntry>,
-    },
+    TransactionHistory { entries: Vec<WalletEntry> },
 
     // === Chat Messages (V2) ===
     /// Chat message from a user
@@ -450,37 +381,22 @@ pub enum ServerMessage {
         timestamp: DateTime<Utc>,
     },
     /// User was muted
-    UserMuted {
-        table_id: TableId,
-        user_id: i64,
-    },
+    UserMuted { table_id: TableId, user_id: i64 },
     /// User was kicked
-    UserKicked {
-        table_id: TableId,
-        user_id: i64,
-    },
+    UserKicked { table_id: TableId, user_id: i64 },
 
     // === Multi-Table Game Messages (V2) ===
     /// Game view for a specific table
-    TableGameView {
-        table_id: TableId,
-        view: GameView,
-    },
+    TableGameView { table_id: TableId, view: GameView },
     /// Turn signal for a specific table
     TableTurnSignal {
         table_id: TableId,
         action_choices: ActionChoices,
     },
     /// Game event at a specific table
-    TableGameEvent {
-        table_id: TableId,
-        event: GameEvent,
-    },
+    TableGameEvent { table_id: TableId, event: GameEvent },
     /// Status message for a specific table
-    TableStatus {
-        table_id: TableId,
-        message: String,
-    },
+    TableStatus { table_id: TableId, message: String },
 
     // === Error Responses (V2) ===
     /// Authentication error
@@ -490,9 +406,7 @@ pub enum ServerMessage {
     /// Table error
     TableError(String),
     /// Rate limit exceeded
-    RateLimitError {
-        retry_after: u64,
-    },
+    RateLimitError { retry_after: u64 },
 }
 
 impl fmt::Display for ServerMessage {
@@ -508,8 +422,12 @@ impl fmt::Display for ServerMessage {
             Self::UserError(error) => error.to_string(),
 
             // Auth responses
-            Self::RegisterSuccess { user_id } => format!("registration successful (user_id: {})", user_id),
-            Self::LoginSuccess { user, .. } => format!("login successful (username: {})", user.username),
+            Self::RegisterSuccess { user_id } => {
+                format!("registration successful (user_id: {})", user_id)
+            }
+            Self::LoginSuccess { user, .. } => {
+                format!("login successful (username: {})", user.username)
+            }
             Self::RefreshSuccess { .. } => "token refreshed".to_string(),
             Self::LogoutSuccess => "logout successful".to_string(),
 
@@ -526,15 +444,23 @@ impl fmt::Display for ServerMessage {
             Self::TableCreated { table_id } => format!("table {} created", table_id),
             Self::TableList { tables } => format!("{} tables available", tables.len()),
             Self::JoinedTable { table_id } => format!("joined table {}", table_id),
-            Self::LeftTable { table_id, chips_returned } => {
+            Self::LeftTable {
+                table_id,
+                chips_returned,
+            } => {
                 format!("left table {} with {} chips", table_id, chips_returned)
             }
             Self::JoinedWaitlist { table_id, position } => {
-                format!("joined waitlist for table {} (position: {})", table_id, position)
+                format!(
+                    "joined waitlist for table {} (position: {})",
+                    table_id, position
+                )
             }
             Self::LeftWaitlist { table_id } => format!("left waitlist for table {}", table_id),
             Self::SpectatingTable { table_id } => format!("spectating table {}", table_id),
-            Self::StoppedSpectating { table_id } => format!("stopped spectating table {}", table_id),
+            Self::StoppedSpectating { table_id } => {
+                format!("stopped spectating table {}", table_id)
+            }
 
             // Wallet responses
             Self::Balance { amount, currency } => format!("balance: {} {}", amount, currency),
@@ -542,13 +468,18 @@ impl fmt::Display for ServerMessage {
             Self::TransactionHistory { entries } => format!("{} transactions", entries.len()),
 
             // Chat messages
-            Self::ChatMessage { username, message, .. } => format!("{}: {}", username, message),
+            Self::ChatMessage {
+                username, message, ..
+            } => format!("{}: {}", username, message),
             Self::UserMuted { user_id, .. } => format!("user {} muted", user_id),
             Self::UserKicked { user_id, .. } => format!("user {} kicked", user_id),
 
             // Multi-table game messages
             Self::TableGameView { table_id, .. } => format!("game view for table {}", table_id),
-            Self::TableTurnSignal { table_id, action_choices } => {
+            Self::TableTurnSignal {
+                table_id,
+                action_choices,
+            } => {
                 format!("your turn at table {} ({})", table_id, action_choices)
             }
             Self::TableGameEvent { table_id, event } => {
@@ -603,7 +534,10 @@ mod tests {
 
     #[test]
     fn test_client_error_equality() {
-        assert_eq!(ClientError::AlreadyAssociated, ClientError::AlreadyAssociated);
+        assert_eq!(
+            ClientError::AlreadyAssociated,
+            ClientError::AlreadyAssociated
+        );
         assert_ne!(ClientError::AlreadyAssociated, ClientError::DoesNotExist);
     }
 
@@ -946,9 +880,7 @@ mod tests {
 
     #[test]
     fn property_client_error_roundtrip() {
-        let errors = vec![
-            ClientError::AlreadyAssociated,
-        ];
+        let errors = vec![ClientError::AlreadyAssociated];
 
         for error in errors {
             let serialized = bincode::serialize(&error).unwrap();

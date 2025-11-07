@@ -50,20 +50,23 @@ pub use auth::{
 /// Wallet components for chip management with double-entry ledger and escrow.
 pub mod wallet;
 pub use wallet::{
-    EntryDirection, EntryType, FaucetClaim, TableEscrow, TableId, Wallet, WalletEntry,
-    WalletError, WalletManager, WalletResult,
+    EntryDirection, EntryType, FaucetClaim, TableEscrow, TableId, Wallet, WalletEntry, WalletError,
+    WalletManager, WalletResult,
 };
 
 /// Table components for multi-table support with async actor model.
 pub mod table;
 pub use table::{
-    BotDifficulty, TableActor, TableConfig, TableHandle, TableManager, TableMessage,
-    TableMetadata, TableResponse, TableSpeed, TableStateResponse,
+    BotDifficulty, TableActor, TableConfig, TableHandle, TableManager, TableMessage, TableMetadata,
+    TableResponse, TableSpeed, TableStateResponse,
 };
 
 /// Bot components for automatic bot players with difficulty presets.
 pub mod bot;
-pub use bot::{BotConfig, BotDecisionMaker, BotId, BotManager, BotPlayer, BotStats, BotTelemetry, DifficultyParams};
+pub use bot::{
+    BotConfig, BotDecisionMaker, BotId, BotManager, BotPlayer, BotStats, BotTelemetry,
+    DifficultyParams,
+};
 
 /// Security components for rate limiting and anti-collusion detection.
 pub mod security;

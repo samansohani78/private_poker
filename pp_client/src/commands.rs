@@ -135,37 +135,25 @@ mod tests {
     #[test]
     fn test_parse_all_in() {
         let result = parse_command("all-in");
-        assert!(matches!(
-            result,
-            Ok(UserCommand::TakeAction(Action::AllIn))
-        ));
+        assert!(matches!(result, Ok(UserCommand::TakeAction(Action::AllIn))));
     }
 
     #[test]
     fn test_parse_call() {
         let result = parse_command("call");
-        assert!(matches!(
-            result,
-            Ok(UserCommand::TakeAction(Action::Call))
-        ));
+        assert!(matches!(result, Ok(UserCommand::TakeAction(Action::Call))));
     }
 
     #[test]
     fn test_parse_check() {
         let result = parse_command("check");
-        assert!(matches!(
-            result,
-            Ok(UserCommand::TakeAction(Action::Check))
-        ));
+        assert!(matches!(result, Ok(UserCommand::TakeAction(Action::Check))));
     }
 
     #[test]
     fn test_parse_fold() {
         let result = parse_command("fold");
-        assert!(matches!(
-            result,
-            Ok(UserCommand::TakeAction(Action::Fold))
-        ));
+        assert!(matches!(result, Ok(UserCommand::TakeAction(Action::Fold))));
     }
 
     #[test]
@@ -203,28 +191,19 @@ mod tests {
     #[test]
     fn test_parse_with_leading_whitespace() {
         let result = parse_command("  call");
-        assert!(matches!(
-            result,
-            Ok(UserCommand::TakeAction(Action::Call))
-        ));
+        assert!(matches!(result, Ok(UserCommand::TakeAction(Action::Call))));
     }
 
     #[test]
     fn test_parse_with_trailing_whitespace() {
         let result = parse_command("fold  ");
-        assert!(matches!(
-            result,
-            Ok(UserCommand::TakeAction(Action::Fold))
-        ));
+        assert!(matches!(result, Ok(UserCommand::TakeAction(Action::Fold))));
     }
 
     #[test]
     fn test_parse_with_surrounding_whitespace() {
         let result = parse_command("  check  ");
-        assert!(matches!(
-            result,
-            Ok(UserCommand::TakeAction(Action::Check))
-        ));
+        assert!(matches!(result, Ok(UserCommand::TakeAction(Action::Check))));
     }
 
     // === Raise command tests ===

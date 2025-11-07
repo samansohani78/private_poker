@@ -7,11 +7,8 @@ use super::{
 };
 use crate::wallet::{TableId, WalletManager};
 use sqlx::{PgPool, Row};
-use std::{
-    collections::HashMap,
-    sync::Arc,
-};
-use tokio::sync::{oneshot, RwLock};
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::{RwLock, oneshot};
 
 /// Table metadata for discovery
 #[derive(Debug, Clone)]
@@ -127,7 +124,12 @@ impl TableManager {
             .map_err(|e| format!("Failed to create escrow: {}", e))?;
 
         // Create and spawn table actor
-        let (actor, handle) = TableActor::new(table_id, config, self.wallet_manager.clone(), self.pool.clone());
+        let (actor, handle) = TableActor::new(
+            table_id,
+            config,
+            self.wallet_manager.clone(),
+            self.pool.clone(),
+        );
 
         // Store handle
         let mut tables = self.tables.write().await;

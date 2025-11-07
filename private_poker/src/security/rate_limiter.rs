@@ -26,8 +26,8 @@ impl RateLimitConfig {
     pub fn login() -> Self {
         Self {
             max_attempts: 5,
-            window_secs: 300,      // 5 minutes
-            lockout_secs: 900,      // 15 minutes
+            window_secs: 300,  // 5 minutes
+            lockout_secs: 900, // 15 minutes
             exponential_backoff: true,
         }
     }
@@ -36,8 +36,8 @@ impl RateLimitConfig {
     pub fn register() -> Self {
         Self {
             max_attempts: 3,
-            window_secs: 3600,     // 1 hour
-            lockout_secs: 3600,     // 1 hour
+            window_secs: 3600,  // 1 hour
+            lockout_secs: 3600, // 1 hour
             exponential_backoff: false,
         }
     }
@@ -46,8 +46,8 @@ impl RateLimitConfig {
     pub fn password_reset() -> Self {
         Self {
             max_attempts: 3,
-            window_secs: 3600,     // 1 hour
-            lockout_secs: 7200,     // 2 hours
+            window_secs: 3600,  // 1 hour
+            lockout_secs: 7200, // 2 hours
             exponential_backoff: true,
         }
     }
@@ -56,8 +56,8 @@ impl RateLimitConfig {
     pub fn chat() -> Self {
         Self {
             max_attempts: 10,
-            window_secs: 60,       // 1 minute
-            lockout_secs: 300,      // 5 minutes
+            window_secs: 60,   // 1 minute
+            lockout_secs: 300, // 5 minutes
             exponential_backoff: false,
         }
     }
@@ -98,7 +98,10 @@ impl RateLimiter {
         let mut configs = HashMap::new();
         configs.insert("login".to_string(), RateLimitConfig::login());
         configs.insert("register".to_string(), RateLimitConfig::register());
-        configs.insert("password_reset".to_string(), RateLimitConfig::password_reset());
+        configs.insert(
+            "password_reset".to_string(),
+            RateLimitConfig::password_reset(),
+        );
         configs.insert("chat".to_string(), RateLimitConfig::chat());
 
         Self {
@@ -133,13 +136,12 @@ impl RateLimiter {
         // Check cache first
         {
             let cache = self.cache.read().await;
-            if let Some(attempt) = cache.get(&key) {
-                if let Some(locked_until) = attempt.locked_until {
-                    if Utc::now() < locked_until {
-                        let retry_after = (locked_until - Utc::now()).num_seconds() as u64;
-                        return Ok(RateLimitResult::Locked { retry_after });
-                    }
-                }
+            if let Some(attempt) = cache.get(&key)
+                && let Some(locked_until) = attempt.locked_until
+                && Utc::now() < locked_until
+            {
+                let retry_after = (locked_until - Utc::now()).num_seconds() as u64;
+                return Ok(RateLimitResult::Locked { retry_after });
             }
         }
 
@@ -147,11 +149,11 @@ impl RateLimiter {
         let attempt = self.load_attempt(endpoint, identifier).await?;
 
         // Check if locked
-        if let Some(locked_until) = attempt.locked_until {
-            if Utc::now() < locked_until {
-                let retry_after = (locked_until - Utc::now()).num_seconds() as u64;
-                return Ok(RateLimitResult::Locked { retry_after });
-            }
+        if let Some(locked_until) = attempt.locked_until
+            && Utc::now() < locked_until
+        {
+            let retry_after = (locked_until - Utc::now()).num_seconds() as u64;
+            return Ok(RateLimitResult::Locked { retry_after });
         }
 
         // Check if window expired
@@ -165,7 +167,10 @@ impl RateLimiter {
                 consecutive_violations: 0,
             };
 
-            self.cache.write().await.insert(key.clone(), new_attempt.clone());
+            self.cache
+                .write()
+                .await
+                .insert(key.clone(), new_attempt.clone());
             return Ok(RateLimitResult::Allowed {
                 remaining: config.max_attempts,
             });
@@ -190,8 +195,12 @@ impl RateLimiter {
                 consecutive_violations: attempt.consecutive_violations + 1,
             };
 
-            self.cache.write().await.insert(key.clone(), new_attempt.clone());
-            self.save_attempt(endpoint, identifier, &new_attempt).await?;
+            self.cache
+                .write()
+                .await
+                .insert(key.clone(), new_attempt.clone());
+            self.save_attempt(endpoint, identifier, &new_attempt)
+                .await?;
 
             return Ok(RateLimitResult::Locked {
                 retry_after: lockout_duration,
@@ -217,18 +226,21 @@ impl RateLimiter {
         let key = format!("{}:{}", endpoint, identifier);
 
         let mut cache = self.cache.write().await;
-        let attempt = cache.entry(key.clone()).or_insert_with(|| RateLimitAttempt {
-            attempts: 0,
-            window_start: Utc::now(),
-            locked_until: None,
-            consecutive_violations: 0,
-        });
+        let attempt = cache
+            .entry(key.clone())
+            .or_insert_with(|| RateLimitAttempt {
+                attempts: 0,
+                window_start: Utc::now(),
+                locked_until: None,
+                consecutive_violations: 0,
+            });
 
         attempt.attempts += 1;
         let updated_attempt = attempt.clone();
         drop(cache);
 
-        self.save_attempt(endpoint, identifier, &updated_attempt).await?;
+        self.save_attempt(endpoint, identifier, &updated_attempt)
+            .await?;
 
         Ok(())
     }
@@ -275,7 +287,9 @@ impl RateLimiter {
         if let Some(row) = row {
             Ok(RateLimitAttempt {
                 attempts: row.get::<i32, _>("attempts") as u32,
-                window_start: row.get::<chrono::NaiveDateTime, _>("window_start").and_utc(),
+                window_start: row
+                    .get::<chrono::NaiveDateTime, _>("window_start")
+                    .and_utc(),
                 locked_until: row
                     .get::<Option<chrono::NaiveDateTime>, _>("locked_until")
                     .map(|dt| dt.and_utc()),

@@ -66,7 +66,8 @@ impl BotDecisionMaker {
                 }
             }
             ActionType::Raise => {
-                let raise_amount = self.calculate_raise_amount(params, pot_size, current_bet, bot_chips);
+                let raise_amount =
+                    self.calculate_raise_amount(params, pot_size, current_bet, bot_chips);
                 if bot_chips <= raise_amount {
                     Action::AllIn
                 } else {
@@ -157,7 +158,8 @@ impl BotDecisionMaker {
         };
 
         // Aggressive bots more likely to raise
-        let raise_threshold = 1.0 / (params.aggression_factor + 1.0);
+        // aggression_factor: 0.5 (Easy) -> 33% raise, 1.5 (Standard) -> 60% raise, 3.0 (Hard) -> 75% raise
+        let raise_threshold = params.aggression_factor / (params.aggression_factor + 1.0);
 
         if self.rng.gen_bool(raise_threshold as f64) {
             ActionType::Raise
@@ -178,9 +180,9 @@ impl BotDecisionMaker {
     ) -> u32 {
         // Raise size varies by aggression
         let base_multiplier = match params.aggression_factor {
-            x if x < 1.0 => 2.0,   // Passive: small raises
-            x if x < 2.0 => 2.5,   // Moderate: standard raises
-            _ => 3.0,              // Aggressive: large raises
+            x if x < 1.0 => 2.0, // Passive: small raises
+            x if x < 2.0 => 2.5, // Moderate: standard raises
+            _ => 3.0,            // Aggressive: large raises
         };
 
         // Add randomness (±20%)
@@ -232,17 +234,18 @@ enum ActionType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::table::config::BotDifficulty;
     use crate::bot::models::BotConfig;
+    use crate::table::config::BotDifficulty;
 
     #[test]
     fn test_easy_bot_is_passive() {
         let mut decision_maker = BotDecisionMaker::new();
-        let params = DifficultyParams::easy();
+        let _params = DifficultyParams::easy();
 
-        // Easy bot should rarely raise
+        // Easy bot should rarely raise (larger sample for stable results)
         let mut raise_count = 0;
-        for _ in 0..100 {
+        let trials = 500;
+        for _ in 0..trials {
             let action = decision_maker.decide_action(
                 &create_test_bot(BotDifficulty::Easy),
                 100,
@@ -255,8 +258,15 @@ mod tests {
             }
         }
 
-        // Should raise less than 30% of the time (passive)
-        assert!(raise_count < 30);
+        // Should raise less than 40% of the time (passive behavior, expected ~33%)
+        let max_raises = (trials as f32 * 0.40) as usize;
+        assert!(
+            raise_count < max_raises,
+            "Easy bot raised {} times out of {} (should be < {})",
+            raise_count,
+            trials,
+            max_raises
+        );
     }
 
     #[test]

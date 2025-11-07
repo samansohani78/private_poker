@@ -62,14 +62,14 @@ impl DifficultyParams {
     /// Loose-passive: plays many hands, rarely aggressive
     pub fn easy() -> Self {
         Self {
-            vpip: 0.45,              // Plays 45% of hands
-            pfr: 0.10,               // Raises pre-flop 10%
-            aggression_factor: 0.5,   // Passive (more calls than raises)
-            fold_to_3bet: 0.70,      // Folds to re-raises 70%
-            cbet_frequency: 0.40,     // Continuation bets 40%
-            base_think_time_ms: 1500, // Thinks ~1.5s base
+            vpip: 0.45,                   // Plays 45% of hands
+            pfr: 0.10,                    // Raises pre-flop 10%
+            aggression_factor: 0.5,       // Passive (more calls than raises)
+            fold_to_3bet: 0.70,           // Folds to re-raises 70%
+            cbet_frequency: 0.40,         // Continuation bets 40%
+            base_think_time_ms: 1500,     // Thinks ~1.5s base
             think_time_variance_ms: 1000, // ±1s variance
-            bluffs: false,            // Never bluffs
+            bluffs: false,                // Never bluffs
             bluff_frequency: 0.0,
         }
     }
@@ -78,15 +78,15 @@ impl DifficultyParams {
     /// Balanced TAG (Tight-Aggressive) style
     pub fn standard() -> Self {
         Self {
-            vpip: 0.30,              // Plays 30% of hands
-            pfr: 0.20,               // Raises pre-flop 20%
-            aggression_factor: 1.5,   // Moderately aggressive
-            fold_to_3bet: 0.50,      // Folds to re-raises 50%
-            cbet_frequency: 0.65,     // Continuation bets 65%
-            base_think_time_ms: 2000, // Thinks ~2s base
+            vpip: 0.30,                   // Plays 30% of hands
+            pfr: 0.20,                    // Raises pre-flop 20%
+            aggression_factor: 1.5,       // Moderately aggressive
+            fold_to_3bet: 0.50,           // Folds to re-raises 50%
+            cbet_frequency: 0.65,         // Continuation bets 65%
+            base_think_time_ms: 2000,     // Thinks ~2s base
             think_time_variance_ms: 1500, // ±1.5s variance
-            bluffs: true,             // Bluffs occasionally
-            bluff_frequency: 0.15,    // Bluffs 15% of time
+            bluffs: true,                 // Bluffs occasionally
+            bluff_frequency: 0.15,        // Bluffs 15% of time
         }
     }
 
@@ -94,15 +94,15 @@ impl DifficultyParams {
     /// Very tight, very aggressive when playing
     pub fn tag() -> Self {
         Self {
-            vpip: 0.20,              // Plays only 20% of hands
-            pfr: 0.18,               // Raises pre-flop 18%
-            aggression_factor: 2.5,   // Very aggressive
-            fold_to_3bet: 0.35,      // Only folds to re-raises 35%
-            cbet_frequency: 0.75,     // Continuation bets 75%
-            base_think_time_ms: 2500, // Thinks ~2.5s base
+            vpip: 0.20,                   // Plays only 20% of hands
+            pfr: 0.18,                    // Raises pre-flop 18%
+            aggression_factor: 2.5,       // Very aggressive
+            fold_to_3bet: 0.35,           // Only folds to re-raises 35%
+            cbet_frequency: 0.75,         // Continuation bets 75%
+            base_think_time_ms: 2500,     // Thinks ~2.5s base
             think_time_variance_ms: 2000, // ±2s variance
-            bluffs: true,             // Bluffs strategically
-            bluff_frequency: 0.25,    // Bluffs 25% of time
+            bluffs: true,                 // Bluffs strategically
+            bluff_frequency: 0.25,        // Bluffs 25% of time
         }
     }
 

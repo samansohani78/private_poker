@@ -142,27 +142,27 @@ impl AntiCollusionDetector {
                     continue;
                 }
 
-                if let Some(other_ip) = ips.get(&other_user_id) {
-                    if other_ip == &user_ip {
-                        // Same IP detected - create shadow flag
-                        let user_ip_owned = user_ip.clone();
-                        drop(ips);
-                        drop(players);
+                if let Some(other_ip) = ips.get(&other_user_id)
+                    && other_ip == &user_ip
+                {
+                    // Same IP detected - create shadow flag
+                    let user_ip_owned = user_ip.clone();
+                    drop(ips);
+                    drop(players);
 
-                        self.create_flag(
-                            user_id,
-                            table_id,
-                            FlagType::SameIpTable,
-                            FlagSeverity::Medium,
-                            serde_json::json!({
-                                "other_user_id": other_user_id,
-                                "ip_address": user_ip_owned
-                            }),
-                        )
-                        .await?;
+                    self.create_flag(
+                        user_id,
+                        table_id,
+                        FlagType::SameIpTable,
+                        FlagSeverity::Medium,
+                        serde_json::json!({
+                            "other_user_id": other_user_id,
+                            "ip_address": user_ip_owned
+                        }),
+                    )
+                    .await?;
 
-                        return Ok(true);
-                    }
+                    return Ok(true);
                 }
             }
         }
@@ -178,7 +178,10 @@ impl AntiCollusionDetector {
     /// * `user_id` - User ID
     pub async fn add_player_to_table(&self, table_id: i64, user_id: i64) {
         let mut players = self.table_players.write().await;
-        players.entry(table_id).or_insert_with(HashSet::new).insert(user_id);
+        players
+            .entry(table_id)
+            .or_insert_with(HashSet::new)
+            .insert(user_id);
     }
 
     /// Remove player from table tracking
@@ -271,21 +274,21 @@ impl AntiCollusionDetector {
         let user_ip = ips.get(&user_id);
         let beneficiary_ip = ips.get(&beneficiary_id);
 
-        if let (Some(ip1), Some(ip2)) = (user_ip, beneficiary_ip) {
-            if ip1 == ip2 {
-                drop(ips);
-                self.create_flag(
-                    user_id,
-                    table_id,
-                    FlagType::CoordinatedFolding,
-                    FlagSeverity::Low,
-                    serde_json::json!({
-                        "beneficiary_id": beneficiary_id,
-                        "same_ip": true
-                    }),
-                )
-                .await?;
-            }
+        if let (Some(ip1), Some(ip2)) = (user_ip, beneficiary_ip)
+            && ip1 == ip2
+        {
+            drop(ips);
+            self.create_flag(
+                user_id,
+                table_id,
+                FlagType::CoordinatedFolding,
+                FlagSeverity::Low,
+                serde_json::json!({
+                    "beneficiary_id": beneficiary_id,
+                    "same_ip": true
+                }),
+            )
+            .await?;
         }
 
         Ok(())

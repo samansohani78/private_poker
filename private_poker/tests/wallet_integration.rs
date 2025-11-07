@@ -5,7 +5,7 @@
 
 use private_poker::auth::AuthManager;
 use private_poker::db::{Database, DatabaseConfig};
-use private_poker::wallet::{WalletManager, WalletError};
+use private_poker::wallet::{WalletError, WalletManager};
 use sqlx::PgPool;
 use std::sync::Arc;
 
@@ -64,7 +64,10 @@ async fn test_create_wallet() {
     assert!(result.is_ok(), "Wallet creation should succeed");
 
     // Get balance
-    let balance = wallet_mgr.get_balance(user_id).await.expect("Should get balance");
+    let balance = wallet_mgr
+        .get_balance(user_id)
+        .await
+        .expect("Should get balance");
     assert_eq!(balance, 1000, "Default balance should be 1000");
 
     cleanup_user(&pool, username).await;
@@ -78,7 +81,10 @@ async fn test_claim_faucet() {
     cleanup_user(&pool, username).await;
 
     let user_id = create_test_user(&pool, username).await;
-    wallet_mgr.create_wallet(user_id).await.expect("Wallet creation should succeed");
+    wallet_mgr
+        .create_wallet(user_id)
+        .await
+        .expect("Wallet creation should succeed");
 
     // Set balance to 0 to allow faucet claim
     wallet_mgr
@@ -94,7 +100,10 @@ async fn test_claim_faucet() {
     assert!(amount > 0, "Faucet amount should be positive");
 
     // Check balance increased
-    let balance = wallet_mgr.get_balance(user_id).await.expect("Should get balance");
+    let balance = wallet_mgr
+        .get_balance(user_id)
+        .await
+        .expect("Should get balance");
     assert_eq!(balance, amount, "Balance should equal faucet amount");
 
     cleanup_user(&pool, username).await;
@@ -108,7 +117,10 @@ async fn test_faucet_cooldown() {
     cleanup_user(&pool, username).await;
 
     let user_id = create_test_user(&pool, username).await;
-    wallet_mgr.create_wallet(user_id).await.expect("Wallet creation should succeed");
+    wallet_mgr
+        .create_wallet(user_id)
+        .await
+        .expect("Wallet creation should succeed");
 
     // Set balance to 0
     wallet_mgr
@@ -117,7 +129,10 @@ async fn test_faucet_cooldown() {
         .expect("Should update balance");
 
     // First claim
-    wallet_mgr.claim_faucet(user_id).await.expect("First claim should succeed");
+    wallet_mgr
+        .claim_faucet(user_id)
+        .await
+        .expect("First claim should succeed");
 
     // Set balance to 0 again
     let balance = wallet_mgr.get_balance(user_id).await.unwrap();
@@ -141,9 +156,15 @@ async fn test_balance_operations() {
     cleanup_user(&pool, username).await;
 
     let user_id = create_test_user(&pool, username).await;
-    wallet_mgr.create_wallet(user_id).await.expect("Wallet creation should succeed");
+    wallet_mgr
+        .create_wallet(user_id)
+        .await
+        .expect("Wallet creation should succeed");
 
-    let initial_balance = wallet_mgr.get_balance(user_id).await.expect("Should get balance");
+    let initial_balance = wallet_mgr
+        .get_balance(user_id)
+        .await
+        .expect("Should get balance");
 
     // Add chips
     wallet_mgr
@@ -151,7 +172,10 @@ async fn test_balance_operations() {
         .await
         .expect("Should add chips");
 
-    let balance_after_add = wallet_mgr.get_balance(user_id).await.expect("Should get balance");
+    let balance_after_add = wallet_mgr
+        .get_balance(user_id)
+        .await
+        .expect("Should get balance");
     assert_eq!(balance_after_add, initial_balance + 500);
 
     // Remove chips
@@ -160,7 +184,10 @@ async fn test_balance_operations() {
         .await
         .expect("Should remove chips");
 
-    let balance_after_remove = wallet_mgr.get_balance(user_id).await.expect("Should get balance");
+    let balance_after_remove = wallet_mgr
+        .get_balance(user_id)
+        .await
+        .expect("Should get balance");
     assert_eq!(balance_after_remove, initial_balance + 500 - 200);
 
     cleanup_user(&pool, username).await;
@@ -174,9 +201,15 @@ async fn test_insufficient_balance() {
     cleanup_user(&pool, username).await;
 
     let user_id = create_test_user(&pool, username).await;
-    wallet_mgr.create_wallet(user_id).await.expect("Wallet creation should succeed");
+    wallet_mgr
+        .create_wallet(user_id)
+        .await
+        .expect("Wallet creation should succeed");
 
-    let balance = wallet_mgr.get_balance(user_id).await.expect("Should get balance");
+    let balance = wallet_mgr
+        .get_balance(user_id)
+        .await
+        .expect("Should get balance");
 
     // Try to remove more chips than available
     let result = wallet_mgr
@@ -200,7 +233,10 @@ async fn test_transaction_history() {
     cleanup_user(&pool, username).await;
 
     let user_id = create_test_user(&pool, username).await;
-    wallet_mgr.create_wallet(user_id).await.expect("Wallet creation should succeed");
+    wallet_mgr
+        .create_wallet(user_id)
+        .await
+        .expect("Wallet creation should succeed");
 
     // Perform several transactions
     wallet_mgr
@@ -238,9 +274,15 @@ async fn test_concurrent_balance_updates() {
     cleanup_user(&pool, username).await;
 
     let user_id = create_test_user(&pool, username).await;
-    wallet_mgr.create_wallet(user_id).await.expect("Wallet creation should succeed");
+    wallet_mgr
+        .create_wallet(user_id)
+        .await
+        .expect("Wallet creation should succeed");
 
-    let initial_balance = wallet_mgr.get_balance(user_id).await.expect("Should get balance");
+    let initial_balance = wallet_mgr
+        .get_balance(user_id)
+        .await
+        .expect("Should get balance");
 
     let mut handles = vec![];
 
@@ -257,12 +299,22 @@ async fn test_concurrent_balance_updates() {
 
     // Wait for all operations
     for handle in handles {
-        handle.await.unwrap().expect("Balance update should succeed");
+        handle
+            .await
+            .unwrap()
+            .expect("Balance update should succeed");
     }
 
     // Final balance should be initial + 100 (10 * 10)
-    let final_balance = wallet_mgr.get_balance(user_id).await.expect("Should get balance");
-    assert_eq!(final_balance, initial_balance + 100, "Concurrent updates should be atomic");
+    let final_balance = wallet_mgr
+        .get_balance(user_id)
+        .await
+        .expect("Should get balance");
+    assert_eq!(
+        final_balance,
+        initial_balance + 100,
+        "Concurrent updates should be atomic"
+    );
 
     cleanup_user(&pool, username).await;
 }
@@ -275,9 +327,15 @@ async fn test_idempotency_key() {
     cleanup_user(&pool, username).await;
 
     let user_id = create_test_user(&pool, username).await;
-    wallet_mgr.create_wallet(user_id).await.expect("Wallet creation should succeed");
+    wallet_mgr
+        .create_wallet(user_id)
+        .await
+        .expect("Wallet creation should succeed");
 
-    let initial_balance = wallet_mgr.get_balance(user_id).await.expect("Should get balance");
+    let initial_balance = wallet_mgr
+        .get_balance(user_id)
+        .await
+        .expect("Should get balance");
 
     let idempotency_key = "unique_transaction_123".to_string();
 
@@ -287,7 +345,10 @@ async fn test_idempotency_key() {
         .await
         .expect("First transaction should succeed");
 
-    let balance_after_first = wallet_mgr.get_balance(user_id).await.expect("Should get balance");
+    let balance_after_first = wallet_mgr
+        .get_balance(user_id)
+        .await
+        .expect("Should get balance");
     assert_eq!(balance_after_first, initial_balance + 100);
 
     // Second transaction with same idempotency key
@@ -296,7 +357,10 @@ async fn test_idempotency_key() {
         .await
         .expect("Idempotent transaction should succeed");
 
-    let balance_after_second = wallet_mgr.get_balance(user_id).await.expect("Should get balance");
+    let balance_after_second = wallet_mgr
+        .get_balance(user_id)
+        .await
+        .expect("Should get balance");
 
     // Balance should not change (idempotency)
     assert_eq!(
@@ -315,9 +379,15 @@ async fn test_negative_balance_prevention() {
     cleanup_user(&pool, username).await;
 
     let user_id = create_test_user(&pool, username).await;
-    wallet_mgr.create_wallet(user_id).await.expect("Wallet creation should succeed");
+    wallet_mgr
+        .create_wallet(user_id)
+        .await
+        .expect("Wallet creation should succeed");
 
-    let balance = wallet_mgr.get_balance(user_id).await.expect("Should get balance");
+    let balance = wallet_mgr
+        .get_balance(user_id)
+        .await
+        .expect("Should get balance");
 
     // Try to create negative balance
     let result = wallet_mgr
@@ -327,8 +397,14 @@ async fn test_negative_balance_prevention() {
     assert!(result.is_err(), "Negative balance should be prevented");
 
     // Balance should remain unchanged
-    let final_balance = wallet_mgr.get_balance(user_id).await.expect("Should get balance");
-    assert_eq!(final_balance, balance, "Balance should not change on failed transaction");
+    let final_balance = wallet_mgr
+        .get_balance(user_id)
+        .await
+        .expect("Should get balance");
+    assert_eq!(
+        final_balance, balance,
+        "Balance should not change on failed transaction"
+    );
 
     cleanup_user(&pool, username).await;
 }

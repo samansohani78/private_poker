@@ -12,6 +12,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct WalletManager {
     pool: Arc<PgPool>,
+    #[allow(dead_code)]
     default_balance: i64,
     faucet_amount: i64,
     faucet_cooldown: Duration,
@@ -30,9 +31,9 @@ impl WalletManager {
     pub fn new(pool: Arc<PgPool>) -> Self {
         Self {
             pool,
-            default_balance: 10000,       // Default starting balance
-            faucet_amount: 1000,          // Daily faucet amount
-            faucet_cooldown: Duration::hours(24),  // 24 hours between claims
+            default_balance: 10000,               // Default starting balance
+            faucet_amount: 1000,                  // Daily faucet amount
+            faucet_cooldown: Duration::hours(24), // 24 hours between claims
         }
     }
 
@@ -190,11 +191,13 @@ impl WalletManager {
         let escrow_balance: i64 = escrow_row.get("balance");
         let new_escrow_balance = escrow_balance + amount;
 
-        sqlx::query("UPDATE table_escrows SET balance = $1, updated_at = NOW() WHERE table_id = $2")
-            .bind(new_escrow_balance)
-            .bind(table_id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(
+            "UPDATE table_escrows SET balance = $1, updated_at = NOW() WHERE table_id = $2",
+        )
+        .bind(new_escrow_balance)
+        .bind(table_id)
+        .execute(&mut *tx)
+        .await?;
 
         // Commit transaction
         tx.commit().await?;
@@ -239,11 +242,12 @@ impl WalletManager {
         }
 
         // Get current escrow balance (with row lock)
-        let escrow_row = sqlx::query("SELECT balance FROM table_escrows WHERE table_id = $1 FOR UPDATE")
-            .bind(table_id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or(WalletError::EscrowNotFound(table_id))?;
+        let escrow_row =
+            sqlx::query("SELECT balance FROM table_escrows WHERE table_id = $1 FOR UPDATE")
+                .bind(table_id)
+                .fetch_optional(&mut *tx)
+                .await?
+                .ok_or(WalletError::EscrowNotFound(table_id))?;
 
         let escrow_balance: i64 = escrow_row.get("balance");
 
@@ -257,11 +261,13 @@ impl WalletManager {
 
         // Debit escrow
         let new_escrow_balance = escrow_balance - amount;
-        sqlx::query("UPDATE table_escrows SET balance = $1, updated_at = NOW() WHERE table_id = $2")
-            .bind(new_escrow_balance)
-            .bind(table_id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(
+            "UPDATE table_escrows SET balance = $1, updated_at = NOW() WHERE table_id = $2",
+        )
+        .bind(new_escrow_balance)
+        .bind(table_id)
+        .execute(&mut *tx)
+        .await?;
 
         // Get current wallet balance (with row lock)
         let wallet_row = sqlx::query("SELECT balance FROM wallets WHERE user_id = $1 FOR UPDATE")
@@ -326,7 +332,9 @@ impl WalletManager {
         .await?;
 
         if let Some(row) = last_claim {
-            let next_claim_at = row.get::<chrono::NaiveDateTime, _>("next_claim_at").and_utc();
+            let next_claim_at = row
+                .get::<chrono::NaiveDateTime, _>("next_claim_at")
+                .and_utc();
             if Utc::now() < next_claim_at {
                 return Err(WalletError::FaucetNotAvailable(next_claim_at));
             }
@@ -389,12 +397,17 @@ impl WalletManager {
             id: claim_row.get("id"),
             user_id: claim_row.get("user_id"),
             amount: claim_row.get("amount"),
-            claimed_at: claim_row.get::<chrono::NaiveDateTime, _>("claimed_at").and_utc(),
-            next_claim_at: claim_row.get::<chrono::NaiveDateTime, _>("next_claim_at").and_utc(),
+            claimed_at: claim_row
+                .get::<chrono::NaiveDateTime, _>("claimed_at")
+                .and_utc(),
+            next_claim_at: claim_row
+                .get::<chrono::NaiveDateTime, _>("next_claim_at")
+                .and_utc(),
         })
     }
 
     /// Create a wallet entry (double-entry ledger)
+    #[allow(clippy::too_many_arguments)]
     async fn create_entry(
         &self,
         tx: &mut Transaction<'_, Postgres>,

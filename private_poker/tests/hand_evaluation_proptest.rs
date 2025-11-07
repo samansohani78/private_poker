@@ -2,7 +2,6 @@
 ///
 /// These tests verify that the hand evaluation logic is correct
 /// across a wide range of randomly generated card combinations.
-
 use private_poker::game::{
     entities::{Card, Suit},
     functional::{argmax, eval, prepare_hand},
@@ -25,13 +24,10 @@ fn card_strategy() -> impl Strategy<Value = Card> {
 
 // Strategy to generate a vec of unique cards (no duplicates)
 fn unique_cards_strategy(min: usize, max: usize) -> impl Strategy<Value = Vec<Card>> {
-    prop::collection::vec(card_strategy(), min..=max).prop_filter(
-        "Cards must be unique",
-        |cards| {
-            let set: BTreeSet<_> = cards.iter().collect();
-            set.len() == cards.len()
-        },
-    )
+    prop::collection::vec(card_strategy(), min..=max).prop_filter("Cards must be unique", |cards| {
+        let set: BTreeSet<_> = cards.iter().collect();
+        set.len() == cards.len()
+    })
 }
 
 // Strategy to generate exactly 5 unique cards

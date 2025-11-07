@@ -322,7 +322,8 @@ impl App {
                                             | io::ErrorKind::ConnectionReset
                                             | io::ErrorKind::TimedOut
                                             | io::ErrorKind::UnexpectedEof => {
-                                                let _ = tx_error_clone.send(format!("Connection lost: {}", error));
+                                                let _ = tx_error_clone
+                                                    .send(format!("Connection lost: {}", error));
                                                 bail!("connection dropped");
                                             }
                                             // Would block "errors" are the OS's way of saying that the
@@ -370,7 +371,10 @@ impl App {
                                                 | io::ErrorKind::InvalidData
                                                 | io::ErrorKind::TimedOut
                                                 | io::ErrorKind::UnexpectedEof => {
-                                                    let _ = tx_error_clone.send(format!("Connection lost: {}", error));
+                                                    let _ = tx_error_clone.send(format!(
+                                                        "Connection lost: {}",
+                                                        error
+                                                    ));
                                                     bail!("connection dropped");
                                                 }
                                                 // Would block "errors" are the OS's way of saying that the
@@ -507,6 +511,11 @@ impl App {
                     ServerMessage::UserError(error) => {
                         Some(Record::new(RecordKind::Error, error.to_string()))
                     }
+                    // V2 protocol messages not yet implemented in client
+                    _ => Some(Record::new(
+                        RecordKind::Error,
+                        "Received unimplemented V2 message".to_string(),
+                    )),
                 };
                 if let Some(record) = result {
                     self.log_handle.push(record.into());
@@ -724,11 +733,7 @@ impl App {
         let help_items = List::new(help_items)
             .direction(ListDirection::BottomToTop)
             .block(block::Block::bordered().title(" commands  "));
-        frame.render_stateful_widget(
-            help_items,
-            help_menu_area,
-            &mut self.help_handle.list_state,
-        );
+        frame.render_stateful_widget(help_items, help_menu_area, &mut self.help_handle.list_state);
 
         // Render help scrollbar.
         frame.render_stateful_widget(
@@ -748,9 +753,9 @@ impl App {
     fn draw(&mut self, view: &GameView, frame: &mut Frame) {
         // Define the main layout structure
         let window = Layout::vertical([
-            Constraint::Min(6),      // Top area (view + log)
-            Constraint::Length(3),   // User input area
-            Constraint::Length(1),   // Help bar
+            Constraint::Min(6),    // Top area (view + log)
+            Constraint::Length(3), // User input area
+            Constraint::Length(1), // Help bar
         ]);
         let [top_area, user_input_area, help_area] = window.areas(frame.area());
 

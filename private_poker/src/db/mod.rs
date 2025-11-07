@@ -63,9 +63,7 @@ impl Database {
     ///
     /// * `Result<(), sqlx::Error>` - Ok if healthy, error otherwise
     pub async fn health_check(&self) -> Result<(), sqlx::Error> {
-        sqlx::query("SELECT 1")
-            .execute(&self.pool)
-            .await?;
+        sqlx::query("SELECT 1").execute(&self.pool).await?;
         Ok(())
     }
 
@@ -91,7 +89,9 @@ mod tests {
             max_lifetime_secs: 1800,
         };
 
-        let db = Database::new(&config).await.expect("Failed to connect to database");
+        let db = Database::new(&config)
+            .await
+            .expect("Failed to connect to database");
         db.health_check().await.expect("Health check failed");
         db.close().await;
     }

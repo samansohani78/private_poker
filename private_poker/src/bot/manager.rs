@@ -1,12 +1,9 @@
 //! Bot manager for automatic bot spawning and management.
 
 use super::models::{BotConfig, BotPlayer, BotTelemetry};
-use crate::table::config::{BotDifficulty, TableConfig};
+use crate::table::config::TableConfig;
 use sqlx::PgPool;
-use std::{
-    collections::HashMap,
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
 /// Bot manager for a single table
@@ -279,7 +276,10 @@ impl BotManager {
         let prefix_idx = rng.gen_range(0..prefixes.len());
         let suffix_idx = rng.gen_range(0..suffixes.len());
 
-        format!("{}{}_{}", prefixes[prefix_idx], suffixes[suffix_idx], bot_id)
+        format!(
+            "{}{}_{}",
+            prefixes[prefix_idx], suffixes[suffix_idx], bot_id
+        )
     }
 
     /// Check if telemetry shows anomalies

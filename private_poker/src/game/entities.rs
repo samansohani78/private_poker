@@ -735,7 +735,10 @@ mod tests {
 
     #[test]
     fn test_blinds_typical_ratio() {
-        let blinds = Blinds { small: 50, big: 100 };
+        let blinds = Blinds {
+            small: 50,
+            big: 100,
+        };
         assert_eq!(blinds.big, blinds.small * 2);
     }
 
@@ -1361,7 +1364,11 @@ mod tests {
 
     #[test]
     fn test_action_choices_from_iterator() {
-        let choices = vec![ActionChoice::Fold, ActionChoice::Check, ActionChoice::Call(50)];
+        let choices = vec![
+            ActionChoice::Fold,
+            ActionChoice::Check,
+            ActionChoice::Call(50),
+        ];
         let action_choices = ActionChoices::from(choices);
 
         assert_eq!(action_choices.0.len(), 3);
@@ -1381,9 +1388,18 @@ mod tests {
 
     #[test]
     fn test_bet_display() {
-        let all_in = Bet { action: BetAction::AllIn, amount: 100 };
-        let call = Bet { action: BetAction::Call, amount: 50 };
-        let raise = Bet { action: BetAction::Raise, amount: 200 };
+        let all_in = Bet {
+            action: BetAction::AllIn,
+            amount: 100,
+        };
+        let call = Bet {
+            action: BetAction::Call,
+            amount: 50,
+        };
+        let raise = Bet {
+            action: BetAction::Raise,
+            amount: 200,
+        };
 
         assert_eq!(format!("{}", all_in), "all-in of $100");
         assert_eq!(format!("{}", call), "call of $50");
@@ -1392,15 +1408,24 @@ mod tests {
 
     #[test]
     fn test_action_from_bet_conversion() {
-        let all_in_bet = Bet { action: BetAction::AllIn, amount: 100 };
+        let all_in_bet = Bet {
+            action: BetAction::AllIn,
+            amount: 100,
+        };
         let action: Action = all_in_bet.into();
         assert!(matches!(action, Action::AllIn));
 
-        let call_bet = Bet { action: BetAction::Call, amount: 50 };
+        let call_bet = Bet {
+            action: BetAction::Call,
+            amount: 50,
+        };
         let action: Action = call_bet.into();
         assert!(matches!(action, Action::Call));
 
-        let raise_bet = Bet { action: BetAction::Raise, amount: 200 };
+        let raise_bet = Bet {
+            action: BetAction::Raise,
+            amount: 200,
+        };
         let action: Action = raise_bet.into();
         assert!(matches!(action, Action::Raise(Some(200))));
     }
@@ -1446,7 +1471,10 @@ mod tests {
     #[test]
     fn test_pot_bet_method() {
         let mut pot = Pot::default();
-        let bet = Bet { action: BetAction::Call, amount: 50 };
+        let bet = Bet {
+            action: BetAction::Call,
+            amount: 50,
+        };
 
         pot.bet(0, &bet);
         assert_eq!(pot.get_investment_by_player_idx(0), 50);
@@ -1475,7 +1503,7 @@ mod tests {
         pot.investments.insert(1, 100);
 
         assert_eq!(pot.get_call_by_player_idx(0), 50); // needs 50 more to match 100
-        assert_eq!(pot.get_call_by_player_idx(1), 0);  // already at max
+        assert_eq!(pot.get_call_by_player_idx(1), 0); // already at max
     }
 
     #[test]
@@ -1557,8 +1585,14 @@ mod tests {
     #[test]
     fn test_pot_bet_accumulates() {
         let mut pot = Pot::default();
-        let bet1 = Bet { action: BetAction::Call, amount: 50 };
-        let bet2 = Bet { action: BetAction::Raise, amount: 100 };
+        let bet1 = Bet {
+            action: BetAction::Call,
+            amount: 50,
+        };
+        let bet2 = Bet {
+            action: BetAction::Raise,
+            amount: 100,
+        };
 
         pot.bet(0, &bet1);
         pot.bet(0, &bet2);
@@ -1614,7 +1648,13 @@ mod tests {
     #[test]
     fn test_suit_variants() {
         // Test all suit variants can be created
-        let suits = vec![Suit::Club, Suit::Spade, Suit::Diamond, Suit::Heart, Suit::Wild];
+        let suits = vec![
+            Suit::Club,
+            Suit::Spade,
+            Suit::Diamond,
+            Suit::Heart,
+            Suit::Wild,
+        ];
         assert_eq!(suits.len(), 5);
     }
 
@@ -1655,7 +1695,10 @@ mod tests {
         let long_string = "a".repeat(10000);
         let username = Username::new(&long_string);
         // Should be truncated to MAX_USER_INPUT_LENGTH / 2 = 16
-        assert_eq!(username.to_string().len(), constants::MAX_USER_INPUT_LENGTH / 2);
+        assert_eq!(
+            username.to_string().len(),
+            constants::MAX_USER_INPUT_LENGTH / 2
+        );
     }
 
     #[test]
@@ -1711,7 +1754,10 @@ mod tests {
     fn test_username_exactly_max_length() {
         let exact_max = "a".repeat(constants::MAX_USER_INPUT_LENGTH / 2);
         let username = Username::new(&exact_max);
-        assert_eq!(username.to_string().len(), constants::MAX_USER_INPUT_LENGTH / 2);
+        assert_eq!(
+            username.to_string().len(),
+            constants::MAX_USER_INPUT_LENGTH / 2
+        );
     }
 
     #[test]
@@ -1873,10 +1919,7 @@ mod tests {
 
     #[test]
     fn test_blinds_zero_values() {
-        let blinds = Blinds {
-            small: 0,
-            big: 0,
-        };
+        let blinds = Blinds { small: 0, big: 0 };
         assert_eq!(blinds.small, 0);
         assert_eq!(blinds.big, 0);
     }

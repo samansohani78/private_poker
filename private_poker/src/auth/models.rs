@@ -51,11 +51,11 @@ pub struct SessionTokens {
 /// JWT claims for access token
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccessTokenClaims {
-    pub sub: UserId,           // User ID
+    pub sub: UserId, // User ID
     pub username: String,
     pub is_admin: bool,
-    pub exp: i64,              // Expiration timestamp
-    pub iat: i64,              // Issued at timestamp
+    pub exp: i64, // Expiration timestamp
+    pub iat: i64, // Issued at timestamp
 }
 
 /// Session model

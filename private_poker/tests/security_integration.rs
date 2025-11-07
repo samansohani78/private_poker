@@ -3,9 +3,7 @@
 //! Tests rate limiting, anti-collusion detection, and seat randomization.
 
 use private_poker::db::{Database, DatabaseConfig};
-use private_poker::security::{
-    AntiCollusionDetector, RateLimiter, SeatRandomizer,
-};
+use private_poker::security::{AntiCollusionDetector, RateLimiter, SeatRandomizer};
 use sqlx::PgPool;
 use std::sync::Arc;
 
@@ -43,13 +41,23 @@ async fn test_rate_limit_login_success() {
     for i in 0..5 {
         let result = limiter.check_rate_limit("login", identifier).await;
         assert!(result.is_ok(), "Check #{} should succeed", i + 1);
-        assert!(result.unwrap().is_allowed(), "Attempt #{} should be allowed", i + 1);
+        assert!(
+            result.unwrap().is_allowed(),
+            "Attempt #{} should be allowed",
+            i + 1
+        );
 
-        limiter.record_attempt("login", identifier).await.expect("Recording should succeed");
+        limiter
+            .record_attempt("login", identifier)
+            .await
+            .expect("Recording should succeed");
     }
 
     // Clean up
-    limiter.reset("login", identifier).await.expect("Reset should succeed");
+    limiter
+        .reset("login", identifier)
+        .await
+        .expect("Reset should succeed");
 }
 
 #[tokio::test]
@@ -61,8 +69,14 @@ async fn test_rate_limit_exceeded() {
 
     // Exceed the login limit (5 attempts)
     for _i in 0..5 {
-        limiter.check_rate_limit("login", identifier).await.expect("Check should succeed");
-        limiter.record_attempt("login", identifier).await.expect("Recording should succeed");
+        limiter
+            .check_rate_limit("login", identifier)
+            .await
+            .expect("Check should succeed");
+        limiter
+            .record_attempt("login", identifier)
+            .await
+            .expect("Recording should succeed");
     }
 
     // 6th attempt should be locked
@@ -71,7 +85,10 @@ async fn test_rate_limit_exceeded() {
     assert!(!result.unwrap().is_allowed(), "Attempt should be locked");
 
     // Clean up
-    limiter.reset("login", identifier).await.expect("Reset should succeed");
+    limiter
+        .reset("login", identifier)
+        .await
+        .expect("Reset should succeed");
 }
 
 #[tokio::test]
@@ -83,10 +100,16 @@ async fn test_rate_limit_exponential_backoff() {
 
     // First violation
     for _i in 0..5 {
-        limiter.record_attempt("login", identifier).await.expect("Recording should succeed");
+        limiter
+            .record_attempt("login", identifier)
+            .await
+            .expect("Recording should succeed");
     }
 
-    let result1 = limiter.check_rate_limit("login", identifier).await.expect("Check should succeed");
+    let result1 = limiter
+        .check_rate_limit("login", identifier)
+        .await
+        .expect("Check should succeed");
     let retry_after_1 = result1.retry_after().expect("Should have retry_after");
 
     // Wait a bit and violate again (simulated - in real test would need to wait for window expiry)
@@ -95,7 +118,10 @@ async fn test_rate_limit_exponential_backoff() {
     assert!(retry_after_1 > 0, "Should have lockout period");
 
     // Clean up
-    limiter.reset("login", identifier).await.expect("Reset should succeed");
+    limiter
+        .reset("login", identifier)
+        .await
+        .expect("Reset should succeed");
 }
 
 #[tokio::test]
@@ -107,17 +133,29 @@ async fn test_rate_limit_different_endpoints() {
 
     // Use login endpoint 5 times
     for _i in 0..5 {
-        limiter.record_attempt("login", identifier).await.expect("Recording should succeed");
+        limiter
+            .record_attempt("login", identifier)
+            .await
+            .expect("Recording should succeed");
     }
 
     // Register endpoint should still be available (different limit)
     let result = limiter.check_rate_limit("register", identifier).await;
     assert!(result.is_ok());
-    assert!(result.unwrap().is_allowed(), "Register endpoint should still be available");
+    assert!(
+        result.unwrap().is_allowed(),
+        "Register endpoint should still be available"
+    );
 
     // Clean up
-    limiter.reset("login", identifier).await.expect("Reset should succeed");
-    limiter.reset("register", identifier).await.expect("Reset should succeed");
+    limiter
+        .reset("login", identifier)
+        .await
+        .expect("Reset should succeed");
+    limiter
+        .reset("register", identifier)
+        .await
+        .expect("Reset should succeed");
 }
 
 #[tokio::test]
@@ -129,18 +167,30 @@ async fn test_rate_limit_reset() {
 
     // Hit the limit
     for _i in 0..5 {
-        limiter.record_attempt("login", identifier).await.expect("Recording should succeed");
+        limiter
+            .record_attempt("login", identifier)
+            .await
+            .expect("Recording should succeed");
     }
 
     // Should be locked
-    let result1 = limiter.check_rate_limit("login", identifier).await.expect("Check should succeed");
+    let result1 = limiter
+        .check_rate_limit("login", identifier)
+        .await
+        .expect("Check should succeed");
     assert!(!result1.is_allowed());
 
     // Reset
-    limiter.reset("login", identifier).await.expect("Reset should succeed");
+    limiter
+        .reset("login", identifier)
+        .await
+        .expect("Reset should succeed");
 
     // Should be allowed again
-    let result2 = limiter.check_rate_limit("login", identifier).await.expect("Check should succeed");
+    let result2 = limiter
+        .check_rate_limit("login", identifier)
+        .await
+        .expect("Check should succeed");
     assert!(result2.is_allowed(), "After reset, should be allowed");
 }
 
@@ -185,8 +235,12 @@ async fn test_different_ip_allowed() {
     let user2_id = 201;
 
     // Register users with different IPs
-    detector.register_user_ip(user1_id, "192.168.1.100".to_string()).await;
-    detector.register_user_ip(user2_id, "192.168.1.101".to_string()).await;
+    detector
+        .register_user_ip(user1_id, "192.168.1.100".to_string())
+        .await;
+    detector
+        .register_user_ip(user2_id, "192.168.1.101".to_string())
+        .await;
 
     // Add first user to table
     detector.add_player_to_table(table_id, user1_id).await;
@@ -226,7 +280,10 @@ async fn test_win_rate_anomaly_detection() {
 
     // This should have created a flag in the database
     // Verify flags were created
-    let flags = detector.get_unreviewed_flags().await.expect("Should get flags");
+    let flags = detector
+        .get_unreviewed_flags()
+        .await
+        .expect("Should get flags");
     assert!(flags.len() > 0, "Should have created collusion flags");
 }
 
@@ -267,10 +324,16 @@ async fn test_flag_review_workflow() {
     detector.register_user_ip(user1_id, ip.to_string()).await;
     detector.register_user_ip(user2_id, ip.to_string()).await;
     detector.add_player_to_table(table_id, user1_id).await;
-    detector.check_same_ip_at_table(table_id, user2_id).await.expect("Check should succeed");
+    detector
+        .check_same_ip_at_table(table_id, user2_id)
+        .await
+        .expect("Check should succeed");
 
     // Get unreviewed flags
-    let flags = detector.get_unreviewed_flags().await.expect("Should get flags");
+    let flags = detector
+        .get_unreviewed_flags()
+        .await
+        .expect("Should get flags");
     assert!(flags.len() > 0, "Should have unreviewed flags");
 
     // Mark first flag as reviewed
@@ -297,10 +360,16 @@ async fn test_get_user_flags() {
     detector.register_user_ip(user1_id, ip.to_string()).await;
     detector.register_user_ip(user2_id, ip.to_string()).await;
     detector.add_player_to_table(table_id, user1_id).await;
-    detector.check_same_ip_at_table(table_id, user2_id).await.expect("Check should succeed");
+    detector
+        .check_same_ip_at_table(table_id, user2_id)
+        .await
+        .expect("Check should succeed");
 
     // Get flags for user2
-    let user_flags = detector.get_user_flags(user2_id).await.expect("Should get user flags");
+    let user_flags = detector
+        .get_user_flags(user2_id)
+        .await
+        .expect("Should get user flags");
     assert!(user_flags.len() > 0, "User should have flags");
 
     // Clean up

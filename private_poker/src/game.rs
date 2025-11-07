@@ -1094,8 +1094,10 @@ impl From<Game<CollectBlinds>> for Game<Deal> {
                 Ordering::Less => {
                     // This should never happen if game invariants are maintained,
                     // but handle gracefully instead of panicking
-                    error!("Player {} has insufficient funds ({}) for blind ({}). Forcing all-in.",
-                           player.user.name, player.user.money, blind);
+                    error!(
+                        "Player {} has insufficient funds ({}) for blind ({}). Forcing all-in.",
+                        player.user.name, player.user.money, blind
+                    );
                     player.state = PlayerState::AllIn;
                     value.data.player_counts.num_active -= 1;
                     Bet {
@@ -1285,14 +1287,21 @@ impl Game<TakeAction> {
                 let player_raise = 2 * pot_call - player_investment;
 
                 // Convert action to bet (or handle check/fold immediately)
-                let bet = match self.convert_action_to_bet(&action, player_idx, player_call, player_raise) {
+                let bet = match self.convert_action_to_bet(
+                    &action,
+                    player_idx,
+                    player_call,
+                    player_raise,
+                ) {
                     Ok(Some(bet)) => bet,
                     Ok(None) => unreachable!(),
                     Err(handled_action) => return Ok(handled_action), // Check or Fold handled
                 };
 
                 // Apply the bet and update game state
-                if let Err(invalid_bet) = self.apply_bet(&bet, player_idx, player_investment, pot_call) {
+                if let Err(invalid_bet) =
+                    self.apply_bet(&bet, player_idx, player_investment, pot_call)
+                {
                     return Err(UserError::InvalidBet { bet: invalid_bet });
                 }
 
@@ -2709,8 +2718,8 @@ mod game_tests {
 #[cfg(test)]
 mod state_tests {
     use super::{
-        PhaseDependentUserManagement, PhaseIndependentUserManagement, PokerState, UserError,
-        GameSettings,
+        GameSettings, PhaseDependentUserManagement, PhaseIndependentUserManagement, PokerState,
+        UserError,
         entities::{Action, Username},
     };
 

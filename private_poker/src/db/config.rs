@@ -46,8 +46,7 @@ impl DatabaseConfig {
     /// Panics if `DATABASE_URL` is not set
     pub fn from_env() -> Self {
         Self {
-            database_url: env::var("DATABASE_URL")
-                .expect("DATABASE_URL must be set"),
+            database_url: env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
             max_connections: env::var("DB_MAX_CONNECTIONS")
                 .unwrap_or_else(|_| "20".to_string())
                 .parse()

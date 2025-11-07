@@ -180,7 +180,10 @@ pub struct TableStateResponse {
 impl TableResponse {
     /// Check if response is success
     pub fn is_success(&self) -> bool {
-        matches!(self, TableResponse::Success | TableResponse::SuccessWithMessage(_))
+        matches!(
+            self,
+            TableResponse::Success | TableResponse::SuccessWithMessage(_)
+        )
     }
 
     /// Get error message if response is error
@@ -188,16 +191,21 @@ impl TableResponse {
         match self {
             TableResponse::Error(msg) => Some(msg.clone()),
             TableResponse::TableFull => Some("Table is full".to_string()),
-            TableResponse::InsufficientChips { required, available } => {
-                Some(format!("Insufficient chips: need {}, have {}", required, available))
-            }
+            TableResponse::InsufficientChips {
+                required,
+                available,
+            } => Some(format!(
+                "Insufficient chips: need {}, have {}",
+                required, available
+            )),
             TableResponse::NotYourTurn => Some("Not your turn".to_string()),
             TableResponse::InvalidAction(msg) => Some(format!("Invalid action: {}", msg)),
             TableResponse::AccessDenied => Some("Access denied".to_string()),
             TableResponse::NotAtTable => Some("Not at table".to_string()),
-            TableResponse::RateLimited { retry_after_secs } => {
-                Some(format!("Rate limited, retry after {} seconds", retry_after_secs))
-            }
+            TableResponse::RateLimited { retry_after_secs } => Some(format!(
+                "Rate limited, retry after {} seconds",
+                retry_after_secs
+            )),
             _ => None,
         }
     }

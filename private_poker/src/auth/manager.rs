@@ -2,16 +2,14 @@
 
 use super::{
     errors::{AuthError, AuthResult},
-    models::{
-        AccessTokenClaims, LoginRequest, RegisterRequest, SessionTokens, User, UserId,
-    },
+    models::{AccessTokenClaims, LoginRequest, RegisterRequest, SessionTokens, User, UserId},
 };
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 use chrono::{Duration, Utc};
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use sqlx::{PgPool, Row};
 use std::sync::Arc;
 use totp_rs::{Algorithm, Secret, TOTP};
@@ -44,8 +42,8 @@ impl AuthManager {
             pool,
             pepper,
             jwt_secret,
-            access_token_duration: Duration::minutes(15),  // 15 minutes
-            refresh_token_duration: Duration::days(7),     // 7 days
+            access_token_duration: Duration::minutes(15), // 15 minutes
+            refresh_token_duration: Duration::days(7),    // 7 days
         }
     }
 
@@ -126,7 +124,9 @@ impl AuthManager {
             is_active: row.get("is_active"),
             is_admin: row.get("is_admin"),
             created_at: row.get::<chrono::NaiveDateTime, _>("created_at").and_utc(),
-            last_login: row.get::<Option<chrono::NaiveDateTime>, _>("last_login").map(|dt| dt.and_utc()),
+            last_login: row
+                .get::<Option<chrono::NaiveDateTime>, _>("last_login")
+                .map(|dt| dt.and_utc()),
         };
 
         // Create wallet for new user
@@ -179,10 +179,11 @@ impl AuthManager {
         self.verify_password(&request.password, &password_hash)?;
 
         // Check if 2FA is enabled
-        let two_factor = sqlx::query("SELECT secret, enabled FROM two_factor_auth WHERE user_id = $1")
-            .bind(user_row.get::<i64, _>("id"))
-            .fetch_optional(self.pool.as_ref())
-            .await?;
+        let two_factor =
+            sqlx::query("SELECT secret, enabled FROM two_factor_auth WHERE user_id = $1")
+                .bind(user_row.get::<i64, _>("id"))
+                .fetch_optional(self.pool.as_ref())
+                .await?;
 
         if let Some(two_factor_row) = two_factor {
             let enabled: bool = two_factor_row.get("enabled");
@@ -207,8 +208,12 @@ impl AuthManager {
             privacy_version: user_row.get("privacy_version"),
             is_active: user_row.get("is_active"),
             is_admin: user_row.get("is_admin"),
-            created_at: user_row.get::<chrono::NaiveDateTime, _>("created_at").and_utc(),
-            last_login: user_row.get::<Option<chrono::NaiveDateTime>, _>("last_login").map(|dt| dt.and_utc()),
+            created_at: user_row
+                .get::<chrono::NaiveDateTime, _>("created_at")
+                .and_utc(),
+            last_login: user_row
+                .get::<Option<chrono::NaiveDateTime>, _>("last_login")
+                .map(|dt| dt.and_utc()),
         };
 
         // Update last login
@@ -218,7 +223,9 @@ impl AuthManager {
             .await?;
 
         // Generate tokens
-        let tokens = self.create_session(user.id, &user.username, user.is_admin, device_fingerprint).await?;
+        let tokens = self
+            .create_session(user.id, &user.username, user.is_admin, device_fingerprint)
+            .await?;
 
         Ok((user, tokens))
     }
@@ -292,7 +299,9 @@ impl AuthManager {
         .ok_or(AuthError::InvalidRefreshToken)?;
 
         // Check if expired
-        let expires_at = session_row.get::<chrono::NaiveDateTime, _>("expires_at").and_utc();
+        let expires_at = session_row
+            .get::<chrono::NaiveDateTime, _>("expires_at")
+            .and_utc();
         if expires_at < Utc::now() {
             // Delete expired session
             sqlx::query("DELETE FROM sessions WHERE token = $1")
@@ -438,7 +447,10 @@ impl AuthManager {
         )
         .map_err(|_| AuthError::InvalidTwoFactorCode)?;
 
-        if totp.check_current(code).map_err(|_| AuthError::InvalidTwoFactorCode)? {
+        if totp
+            .check_current(code)
+            .map_err(|_| AuthError::InvalidTwoFactorCode)?
+        {
             Ok(())
         } else {
             Err(AuthError::InvalidTwoFactorCode)
@@ -448,7 +460,7 @@ impl AuthManager {
     /// Validate username format
     fn validate_username(&self, username: &str) -> AuthResult<()> {
         let len = username.len();
-        if len < 3 || len > 20 {
+        if !(3..=20).contains(&len) {
             return Err(AuthError::InvalidUsername(
                 "Username must be 3-20 characters".to_string(),
             ));

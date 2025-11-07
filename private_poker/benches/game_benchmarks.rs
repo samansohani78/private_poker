@@ -1,8 +1,8 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use private_poker::{
-    PokerState, GameSettings,
+    GameSettings, PokerState,
     entities::{Card, Suit, Username},
-    functional::{eval, argmax},
+    functional::{argmax, eval},
     game::{GameStateManagement, PhaseIndependentUserManagement},
 };
 
@@ -35,8 +35,8 @@ fn setup_game_with_players(n_players: usize) -> PokerState {
 /// Benchmark hand evaluation with 2 cards (pocket cards)
 fn bench_hand_eval_2_cards(c: &mut Criterion) {
     let cards = vec![
-        Card(14, Suit::Spade),  // Ace
-        Card(13, Suit::Spade),  // King
+        Card(14, Suit::Spade), // Ace
+        Card(13, Suit::Spade), // King
     ];
 
     c.bench_function("hand_eval_2_cards", |b| {
@@ -99,13 +99,30 @@ fn bench_hand_eval_100_iterations(c: &mut Criterion) {
 fn bench_hand_comparison(c: &mut Criterion) {
     let hands = vec![
         // High card
-        eval(&[Card(2, Suit::Club), Card(5, Suit::Heart), Card(9, Suit::Diamond)]),
+        eval(&[
+            Card(2, Suit::Club),
+            Card(5, Suit::Heart),
+            Card(9, Suit::Diamond),
+        ]),
         // Pair
-        eval(&[Card(2, Suit::Club), Card(2, Suit::Heart), Card(9, Suit::Diamond)]),
+        eval(&[
+            Card(2, Suit::Club),
+            Card(2, Suit::Heart),
+            Card(9, Suit::Diamond),
+        ]),
         // Two pair
-        eval(&[Card(2, Suit::Club), Card(2, Suit::Heart), Card(9, Suit::Diamond), Card(9, Suit::Club)]),
+        eval(&[
+            Card(2, Suit::Club),
+            Card(2, Suit::Heart),
+            Card(9, Suit::Diamond),
+            Card(9, Suit::Club),
+        ]),
         // Three of a kind
-        eval(&[Card(2, Suit::Club), Card(2, Suit::Heart), Card(2, Suit::Diamond)]),
+        eval(&[
+            Card(2, Suit::Club),
+            Card(2, Suit::Heart),
+            Card(2, Suit::Diamond),
+        ]),
     ];
 
     c.bench_function("hand_comparison_4_hands", |b| {
