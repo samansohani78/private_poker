@@ -75,6 +75,13 @@ pub use security::{
     RateLimitConfig, RateLimitResult, RateLimiter, SeatRandomizer,
 };
 
+/// Tournament components for Sit-n-Go and scheduled tournaments.
+pub mod tournament;
+pub use tournament::{
+    BlindLevel, PrizeStructure, TournamentConfig, TournamentError, TournamentId, TournamentInfo,
+    TournamentManager, TournamentRegistration, TournamentResult, TournamentState, TournamentType,
+};
+
 /// Networking components for client-server communication.
 pub mod net;
 pub use net::{client::Client, messages, protocol_version, server, utils};

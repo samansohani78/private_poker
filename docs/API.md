@@ -647,6 +647,121 @@ pub enum Action {
 3. Review collusion flags regularly
 4. Use seat randomization always
 
+## 7. Tournament API (Phase 7)
+
+### Create Tournament
+
+```rust
+pub async fn create_tournament(
+    &self,
+    config: TournamentConfig,
+) -> TournamentResult<TournamentId>
+```
+
+**Parameters**:
+- `config`: Tournament configuration (see TournamentConfig)
+
+**Returns**: `TournamentId` on success
+
+**Example**:
+```rust
+let config = TournamentConfig::sit_and_go("Sunday Special".to_string(), 9, 100);
+let tournament_id = tournament_mgr.create_tournament(config).await?;
+```
+
+### Register for Tournament
+
+```rust
+pub async fn register_player(
+    &self,
+    tournament_id: TournamentId,
+    user_id: i64,
+    username: String,
+) -> TournamentResult<()>
+```
+
+**Checks**:
+- Tournament must be in Registering state
+- Tournament must not be full
+- Player must not already be registered
+
+**Auto-start**: Sit-n-Go tournaments start automatically when full
+
+### Get Tournament Info
+
+```rust
+pub async fn get_tournament_info(
+    &self,
+    tournament_id: TournamentId,
+) -> TournamentResult<TournamentInfo>
+```
+
+**Returns**: Complete tournament information including:
+- Current state and blind level
+- Registered players count
+- Prize structure
+- Time to next blind level
+
+### Blind Level Management
+
+```rust
+pub async fn advance_blind_level(
+    &self,
+    tournament_id: TournamentId,
+) -> TournamentResult<u32>
+```
+
+**Note**: Automatically called by tournament timer. Returns new level number.
+
+### Player Elimination
+
+```rust
+pub async fn eliminate_player(
+    &self,
+    tournament_id: TournamentId,
+    user_id: i64,
+    position: usize,
+) -> TournamentResult<()>
+```
+
+**Prize Calculation**: Automatically calculates prize based on:
+- 2-5 players: Winner takes all
+- 6-9 players: 60/40 split
+- 10+ players: 50/30/20 split
+
+### Tournament Configuration
+
+```rust
+// Standard 9-player Sit-n-Go
+let config = TournamentConfig::sit_and_go("Test SNG".to_string(), 9, 100);
+
+// Turbo (faster blinds)
+let config = TournamentConfig::turbo_sit_and_go("Turbo SNG".to_string(), 6, 50);
+
+// Custom blind structure
+let config = TournamentConfig {
+    name: "Custom Tournament".to_string(),
+    tournament_type: TournamentType::SitAndGo,
+    buy_in: 200,
+    min_players: 4,
+    max_players: 10,
+    starting_stack: 10000,
+    blind_levels: vec![
+        BlindLevel::new(1, 25, 50, 600),
+        BlindLevel::new(2, 50, 100, 600),
+        // ... more levels
+    ],
+    starting_level: 1,
+    scheduled_start: None,
+    late_registration_secs: None,
+};
+```
+
+**Blind Level Structure**:
+- Standard: 5-minute levels, blinds double every 2 levels
+- Turbo: 3-minute levels
+- Starting stack: 50x buy-in
+
 ---
 
 ## Support

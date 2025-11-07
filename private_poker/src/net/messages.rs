@@ -206,6 +206,24 @@ pub enum UserCommand {
     StartGameAtTable { table_id: TableId },
     /// Show hand at specific table
     ShowHandAtTable { table_id: TableId },
+
+    // === Tournament Commands (V2) ===
+    /// Create a new tournament
+    CreateTournament {
+        config: crate::tournament::TournamentConfig,
+    },
+    /// List tournaments
+    ListTournaments {
+        state_filter: Option<crate::tournament::TournamentState>,
+    },
+    /// Register for tournament
+    RegisterTournament { tournament_id: i64 },
+    /// Unregister from tournament
+    UnregisterTournament { tournament_id: i64 },
+    /// Get tournament info
+    GetTournamentInfo { tournament_id: i64 },
+    /// Get tournament standings
+    GetTournamentStandings { tournament_id: i64 },
 }
 
 impl fmt::Display for UserCommand {
@@ -267,6 +285,22 @@ impl fmt::Display for UserCommand {
             }
             Self::StartGameAtTable { table_id } => format!("started game at table {}", table_id),
             Self::ShowHandAtTable { table_id } => format!("showed hand at table {}", table_id),
+
+            // Tournament commands
+            Self::CreateTournament { config } => format!("created tournament '{}'", config.name),
+            Self::ListTournaments { .. } => "listed tournaments".to_string(),
+            Self::RegisterTournament { tournament_id } => {
+                format!("registered for tournament {}", tournament_id)
+            }
+            Self::UnregisterTournament { tournament_id } => {
+                format!("unregistered from tournament {}", tournament_id)
+            }
+            Self::GetTournamentInfo { tournament_id } => {
+                format!("requested tournament {} info", tournament_id)
+            }
+            Self::GetTournamentStandings { tournament_id } => {
+                format!("requested tournament {} standings", tournament_id)
+            }
         };
         write!(f, "{}", repr)
     }
@@ -398,6 +432,42 @@ pub enum ServerMessage {
     /// Status message for a specific table
     TableStatus { table_id: TableId, message: String },
 
+    // === Tournament Messages (V2) ===
+    /// Tournament created
+    TournamentCreated { tournament_id: i64 },
+    /// List of tournaments
+    TournamentList {
+        tournaments: Vec<crate::tournament::TournamentInfo>,
+    },
+    /// Tournament information
+    TournamentInfo {
+        info: crate::tournament::TournamentInfo,
+    },
+    /// Tournament standings
+    TournamentStandings {
+        tournament_id: i64,
+        standings: Vec<crate::tournament::TournamentRegistration>,
+    },
+    /// Registered for tournament
+    TournamentRegistered { tournament_id: i64 },
+    /// Unregistered from tournament
+    TournamentUnregistered { tournament_id: i64 },
+    /// Tournament started
+    TournamentStarted { tournament_id: i64 },
+    /// Tournament finished
+    TournamentFinished { tournament_id: i64, winner_id: i64 },
+    /// Blind level increased
+    BlindLevelIncreased { tournament_id: i64, new_level: u32 },
+    /// Player eliminated from tournament
+    PlayerEliminated {
+        tournament_id: i64,
+        user_id: i64,
+        position: usize,
+        prize: Option<i64>,
+    },
+    /// Tournament error
+    TournamentError(String),
+
     // === Error Responses (V2) ===
     /// Authentication error
     AuthError(String),
@@ -488,6 +558,90 @@ impl fmt::Display for ServerMessage {
             Self::TableStatus { table_id, message } => {
                 format!("table {}: {}", table_id, message)
             }
+
+            // Tournament messages
+            Self::TournamentCreated { tournament_id } => {
+                format!("tournament {} created", tournament_id)
+            }
+            Self::TournamentList { tournaments } => {
+                format!("{} tournaments available", tournaments.len())
+            }
+            Self::TournamentInfo { info } => {
+                format!("tournament {}: {}", info.id, info.config.name)
+            }
+            Self::TournamentStandings {
+                tournament_id,
+                standings,
+            } => {
+                format!(
+                    "tournament {} standings ({} players)",
+                    tournament_id,
+                    standings.len()
+                )
+            }
+            Self::TournamentRegistered { tournament_id } => {
+                format!("registered for tournament {}", tournament_id)
+            }
+            Self::TournamentUnregistered { tournament_id } => {
+                format!("unregistered from tournament {}", tournament_id)
+            }
+            Self::TournamentStarted { tournament_id } => {
+                format!("tournament {} started", tournament_id)
+            }
+            Self::TournamentFinished {
+                tournament_id,
+                winner_id,
+            } => {
+                format!(
+                    "tournament {} finished, winner: {}",
+                    tournament_id, winner_id
+                )
+            }
+            Self::BlindLevelIncreased {
+                tournament_id,
+                new_level,
+            } => {
+                format!(
+                    "tournament {}: blinds increased to level {}",
+                    tournament_id, new_level
+                )
+            }
+            Self::PlayerEliminated {
+                tournament_id,
+                user_id,
+                position,
+                prize,
+            } => {
+                if let Some(amount) = prize {
+                    format!(
+                        "tournament {}: player {} eliminated ({}{} place, won {})",
+                        tournament_id,
+                        user_id,
+                        position,
+                        match position {
+                            1 => "st",
+                            2 => "nd",
+                            3 => "rd",
+                            _ => "th",
+                        },
+                        amount
+                    )
+                } else {
+                    format!(
+                        "tournament {}: player {} eliminated ({}{})",
+                        tournament_id,
+                        user_id,
+                        position,
+                        match position {
+                            1 => "st",
+                            2 => "nd",
+                            3 => "rd",
+                            _ => "th",
+                        }
+                    )
+                }
+            }
+            Self::TournamentError(error) => format!("tournament error: {}", error),
 
             // Error responses
             Self::AuthError(error) => format!("auth error: {}", error),
