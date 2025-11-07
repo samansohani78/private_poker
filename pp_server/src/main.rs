@@ -1,41 +1,44 @@
-//! A low-level TCP poker server.
+//! Multi-table poker server using async actor model.
 //!
-//! The server runs with two threads; one for managing TCP connections
-//! and exchanging data, and another for updating the poker game state
-//! at fixed intervals and in response to user commands.
+//! This server spawns TableActor instances managed by TableManager,
+//! with database-backed authentication and wallet systems.
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use anyhow::Error;
 use ctrlc::set_handler;
 use log::info;
 use pico_args::Arguments;
 use private_poker::{
-    DEFAULT_BUY_IN, DEFAULT_MAX_USERS, GameSettings, MAX_PLAYERS,
-    entities::Usd,
-    server::{self, PokerConfig},
+    db::{Database, DatabaseConfig},
+    table::{TableConfig, TableManager, TableSpeed, BotDifficulty},
+    wallet::WalletManager,
 };
 
 const HELP: &str = "\
-Run a private poker server
+Run a multi-table private poker server
 
 USAGE:
   pp_server [OPTIONS]
 
 OPTIONS:
-  --bind    IP:PORT     Server socket bind address  [default: 127.0.0.1:6969]
-  --buy_in  USD         New user starting money     [default: 600]
+  --bind       IP:PORT     Server socket bind address  [default: 127.0.0.1:6969]
+  --db-url     URL         Database connection string  [default: postgres://poker_test:test_password@localhost/poker_test]
+  --tables     N           Number of tables to create  [default: 1]
 
 FLAGS:
-  -h, --help            Print help information
+  -h, --help               Print help information
 ";
 
 struct Args {
     bind: SocketAddr,
-    buy_in: Usd,
+    database_url: String,
+    num_tables: usize,
 }
 
-fn main() -> Result<(), Error> {
+#[tokio::main]
+async fn main() -> Result<(), Error> {
     let mut pargs = Arguments::from_env();
 
     // Help has a higher priority and should be handled separately.
@@ -48,18 +51,108 @@ fn main() -> Result<(), Error> {
         bind: pargs
             .value_from_str("--bind")
             .unwrap_or("127.0.0.1:6969".parse()?),
-        buy_in: pargs.value_from_str("--buy_in").unwrap_or(DEFAULT_BUY_IN),
+        database_url: pargs
+            .value_from_str("--db-url")
+            .unwrap_or_else(|_| {
+                std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+                    "postgres://poker_test:test_password@localhost/poker_test".to_string()
+                })
+            }),
+        num_tables: pargs.value_from_str("--tables").unwrap_or(1),
     };
-
-    let game_settings = GameSettings::new(MAX_PLAYERS, DEFAULT_MAX_USERS, args.buy_in);
-    let config: PokerConfig = game_settings.into();
 
     // Catching signals for exit.
     set_handler(|| std::process::exit(0))?;
 
     env_logger::builder().format_target(false).init();
-    info!("starting at {}", args.bind);
-    server::run(args.bind, config)?;
+    info!("Starting multi-table poker server at {}", args.bind);
+
+    // Initialize database
+    info!("Connecting to database: {}", args.database_url);
+    let db_config = DatabaseConfig {
+        database_url: args.database_url,
+        max_connections: 10,
+        min_connections: 2,
+        connection_timeout_secs: 5,
+        idle_timeout_secs: 300,
+        max_lifetime_secs: 1800,
+    };
+
+    let db = Database::new(&db_config)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to connect to database: {}", e))?;
+
+    info!("Database connected successfully");
+
+    // Create managers
+    let pool = Arc::new(db.pool().clone());
+    let wallet_manager = Arc::new(WalletManager::new(pool.clone()));
+    let table_manager = Arc::new(TableManager::new(pool.clone(), wallet_manager.clone()));
+
+    info!("Creating {} initial table(s)...", args.num_tables);
+
+    // Create initial tables
+    for i in 0..args.num_tables {
+        let config = TableConfig {
+            name: format!("Table {}", i + 1),
+            max_players: 9,
+            small_blind: 10,
+            big_blind: 20,
+            min_buy_in_bb: 50,
+            max_buy_in_bb: 200,
+            absolute_chip_cap: 100_000,
+            top_up_cooldown_hands: 20,
+            speed: TableSpeed::Normal,
+            bots_enabled: true,
+            target_bot_count: 6,
+            bot_difficulty: BotDifficulty::Standard,
+            is_private: false,
+            passphrase_hash: None,
+            invite_token: None,
+            invite_expires_at: None,
+        };
+
+        match table_manager.create_table(config, None).await {
+            Ok(table_id) => {
+                info!("✓ Created table {} with ID {}", i + 1, table_id);
+            }
+            Err(e) => {
+                log::error!("Failed to create table {}: {}", i + 1, e);
+            }
+        }
+    }
+
+    let active_count = table_manager.active_table_count().await;
+    info!("Server ready with {} active table(s)", active_count);
+
+    // List tables
+    match table_manager.list_tables().await {
+        Ok(tables) => {
+            info!("Active tables:");
+            for table in tables {
+                info!(
+                    "  - {} (ID: {}) - {}/{} players, blinds: {}/{}",
+                    table.name,
+                    table.id,
+                    table.player_count,
+                    table.max_players,
+                    table.small_blind,
+                    table.big_blind
+                );
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to list tables: {}", e);
+        }
+    }
+
+    info!("Server is running. Press Ctrl+C to stop.");
+
+    // Keep server running
+    // TODO: Add HTTP API or WebSocket server here
+    tokio::signal::ctrl_c().await?;
+
+    info!("Shutting down server...");
 
     Ok(())
 }
