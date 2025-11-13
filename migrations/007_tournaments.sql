@@ -1,8 +1,14 @@
 -- Tournament tables for Sit-n-Go and scheduled tournaments
 -- Part of Phase 7 implementation
+-- This migration updates the existing tournaments table and adds tournament_registrations
 
--- Tournaments table
-CREATE TABLE IF NOT EXISTS tournaments (
+-- Drop old tournament tables from initial schema
+DROP TABLE IF EXISTS tournament_players CASCADE;
+DROP TABLE IF EXISTS tournament_tables CASCADE;
+DROP TABLE IF EXISTS tournaments CASCADE;
+
+-- Create new tournaments table with enhanced schema
+CREATE TABLE tournaments (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     tournament_type VARCHAR(50) NOT NULL CHECK (tournament_type IN ('sit_and_go', 'scheduled')),
@@ -25,7 +31,7 @@ CREATE TABLE IF NOT EXISTS tournaments (
 );
 
 -- Tournament registrations table
-CREATE TABLE IF NOT EXISTS tournament_registrations (
+CREATE TABLE tournament_registrations (
     id BIGSERIAL PRIMARY KEY,
     tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -43,11 +49,11 @@ CREATE TABLE IF NOT EXISTS tournament_registrations (
 );
 
 -- Indexes for performance
-CREATE INDEX IF NOT EXISTS idx_tournaments_state ON tournaments(state);
-CREATE INDEX IF NOT EXISTS idx_tournaments_created_at ON tournaments(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_tournament_registrations_tournament_id ON tournament_registrations(tournament_id);
-CREATE INDEX IF NOT EXISTS idx_tournament_registrations_user_id ON tournament_registrations(user_id);
-CREATE INDEX IF NOT EXISTS idx_tournament_registrations_finish_position ON tournament_registrations(tournament_id, finish_position) WHERE finish_position IS NOT NULL;
+CREATE INDEX idx_tournaments_state ON tournaments(state);
+CREATE INDEX idx_tournaments_created_at ON tournaments(created_at DESC);
+CREATE INDEX idx_tournament_registrations_tournament_id ON tournament_registrations(tournament_id);
+CREATE INDEX idx_tournament_registrations_user_id ON tournament_registrations(user_id);
+CREATE INDEX idx_tournament_registrations_finish_position ON tournament_registrations(tournament_id, finish_position) WHERE finish_position IS NOT NULL;
 
 -- Comments for documentation
 COMMENT ON TABLE tournaments IS 'Stores tournament configurations and state';

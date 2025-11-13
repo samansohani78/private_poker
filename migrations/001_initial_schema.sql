@@ -337,49 +337,10 @@ CREATE INDEX idx_collusion_flags_table_id ON collusion_flags(table_id);
 CREATE INDEX idx_collusion_flags_reviewed ON collusion_flags(reviewed) WHERE NOT reviewed;
 
 -- ======================
--- TOURNAMENTS (Phase B)
--- ======================
-
-CREATE TABLE tournaments (
-    id BIGSERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    tournament_type VARCHAR(20) NOT NULL CHECK (tournament_type IN ('sit_n_go', 'mtt')),
-    buy_in BIGINT NOT NULL,
-    starting_chips BIGINT NOT NULL,
-    max_players INT NOT NULL,
-    current_players INT NOT NULL DEFAULT 0,
-    status VARCHAR(20) NOT NULL DEFAULT 'registering' CHECK (status IN ('registering', 'running', 'finished')),
-    started_at TIMESTAMP,
-    finished_at TIMESTAMP,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE tournament_tables (
-    id BIGSERIAL PRIMARY KEY,
-    tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
-    table_number INT NOT NULL,
-    table_id BIGINT NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-
-    UNIQUE (tournament_id, table_number)
-);
-
-CREATE TABLE tournament_players (
-    id BIGSERIAL PRIMARY KEY,
-    tournament_id BIGINT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
-    user_id BIGINT NOT NULL REFERENCES users(id),
-    current_table_id BIGINT,
-    chips BIGINT NOT NULL,
-    placement INT,
-    prize BIGINT,
-    eliminated_at TIMESTAMP,
-
-    UNIQUE (tournament_id, user_id)
-);
-
--- ======================
 -- INITIAL DATA
 -- ======================
 
 -- NOTE: Admin user creation deferred until AuthManager is implemented
 -- Default admin credentials will be created via migration script
+
+-- NOTE: Tournament tables moved to migration 007_tournaments.sql
