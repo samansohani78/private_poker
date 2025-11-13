@@ -76,7 +76,14 @@ async fn main() -> Result<(), Error> {
                     "postgres://poker_test:test_password@localhost/poker_test".to_string()
                 })
             }),
-        num_tables: pargs.value_from_str("--tables").unwrap_or(1),
+        num_tables: pargs
+            .value_from_str("--tables")
+            .unwrap_or_else(|_| {
+                std::env::var("MAX_TABLES")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(1)
+            }),
     };
 
     // Catching signals for exit.
@@ -89,11 +96,26 @@ async fn main() -> Result<(), Error> {
     info!("Connecting to database: {}", args.database_url);
     let db_config = DatabaseConfig {
         database_url: args.database_url,
-        max_connections: 10,
-        min_connections: 2,
-        connection_timeout_secs: 5,
-        idle_timeout_secs: 300,
-        max_lifetime_secs: 1800,
+        max_connections: std::env::var("DB_MAX_CONNECTIONS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(100),
+        min_connections: std::env::var("DB_MIN_CONNECTIONS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5),
+        connection_timeout_secs: std::env::var("DB_CONNECTION_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5),
+        idle_timeout_secs: std::env::var("DB_IDLE_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(300),
+        max_lifetime_secs: std::env::var("DB_MAX_LIFETIME_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1800),
     };
 
     let db = Database::new(&db_config)
@@ -116,21 +138,59 @@ async fn main() -> Result<(), Error> {
 
     info!("Creating {} initial table(s)...", args.num_tables);
 
+    // Parse bot difficulty from env
+    let bot_difficulty = std::env::var("DEFAULT_BOT_DIFFICULTY")
+        .ok()
+        .and_then(|v| match v.to_lowercase().as_str() {
+            "easy" => Some(BotDifficulty::Easy),
+            "standard" => Some(BotDifficulty::Standard),
+            "tag" => Some(BotDifficulty::Tag),
+            _ => None,
+        })
+        .unwrap_or(BotDifficulty::Standard);
+
     // Create initial tables
     for i in 0..args.num_tables {
         let config = TableConfig {
             name: format!("Table {}", i + 1),
-            max_players: 9,
-            small_blind: 10,
-            big_blind: 20,
-            min_buy_in_bb: 50,
-            max_buy_in_bb: 200,
-            absolute_chip_cap: 100_000,
-            top_up_cooldown_hands: 20,
+            max_players: std::env::var("TABLE_MAX_PLAYERS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(9),
+            small_blind: std::env::var("TABLE_SMALL_BLIND")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(10),
+            big_blind: std::env::var("TABLE_BIG_BLIND")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(20),
+            min_buy_in_bb: std::env::var("TABLE_MIN_BUY_IN_BB")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(50),
+            max_buy_in_bb: std::env::var("TABLE_MAX_BUY_IN_BB")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(200),
+            absolute_chip_cap: std::env::var("ABSOLUTE_CHIP_CAP")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(100_000),
+            top_up_cooldown_hands: std::env::var("TABLE_TOP_UP_COOLDOWN_HANDS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(20),
             speed: TableSpeed::Normal,
-            bots_enabled: true,
-            target_bot_count: 6,
-            bot_difficulty: BotDifficulty::Standard,
+            bots_enabled: std::env::var("BOTS_ENABLED")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(true),
+            target_bot_count: std::env::var("TARGET_BOT_COUNT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(6),
+            bot_difficulty,
             is_private: false,
             passphrase_hash: None,
             invite_token: None,
