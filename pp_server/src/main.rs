@@ -26,12 +26,19 @@ USAGE:
   pp_server [OPTIONS]
 
 OPTIONS:
-  --bind       IP:PORT     Server socket bind address  [default: 127.0.0.1:6969]
-  --db-url     URL         Database connection string  [default: postgres://poker_test:test_password@localhost/poker_test]
+  --bind       IP:PORT     Server socket bind address  [default: env SERVER_BIND or 127.0.0.1:6969]
+  --db-url     URL         Database connection string  [default: env DATABASE_URL or postgres://poker_test:test_password@localhost/poker_test]
   --tables     N           Number of tables to create  [default: 1]
 
 FLAGS:
   -h, --help               Print help information
+
+ENVIRONMENT:
+  SERVER_BIND              Server bind address (e.g., 0.0.0.0:8080)
+  DATABASE_URL             PostgreSQL connection string
+  JWT_SECRET               JWT signing secret
+  PASSWORD_PEPPER          Password hashing pepper
+  (See .env file for all configuration options)
 ";
 
 struct Args {
@@ -56,7 +63,12 @@ async fn main() -> Result<(), Error> {
     let args = Args {
         bind: pargs
             .value_from_str("--bind")
-            .unwrap_or("127.0.0.1:6969".parse()?),
+            .unwrap_or_else(|_| {
+                std::env::var("SERVER_BIND")
+                    .unwrap_or_else(|_| "127.0.0.1:6969".to_string())
+                    .parse()
+                    .expect("Invalid SERVER_BIND address")
+            }),
         database_url: pargs
             .value_from_str("--db-url")
             .unwrap_or_else(|_| {
