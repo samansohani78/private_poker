@@ -59,23 +59,91 @@ sqlx migrate run --database-url "postgres://localhost/poker_db"
 ### Running the Server
 
 ```bash
-# Start the poker server
+# Start the poker server (reads configuration from .env)
 cargo run --bin pp_server --release
 ```
 
-Server will start on `http://localhost:6969`
+Server will start on `http://0.0.0.0:8080` (configurable via `.env` file)
 
-### Running the Client
+### User Registration & Login
+
+#### Password Requirements
+Passwords must contain:
+- ✅ At least one **number** (0-9)
+- ✅ At least one **uppercase** letter (A-Z)
+- ✅ At least one **lowercase** letter (a-z)
+- ✅ Minimum length of 8 characters
+
+**Examples:**
+- ❌ `secret123` - Missing uppercase letter
+- ❌ `PASSWORD` - Missing lowercase and number
+- ❌ `Pass` - Too short
+- ✅ `Pass123!` - Valid password
+- ✅ `Alice2024` - Valid password
+
+#### Method 1: Using the Client (Auto-Registration)
+
+The client automatically registers new users if they don't exist:
 
 **TUI Mode (Rich Terminal UI)**:
 ```bash
-cargo run --bin pp_client --release -- --username alice --tui
+cargo run --bin pp_client --release -- \
+  --server http://localhost:8080 \
+  --username alice \
+  --password Pass123! \
+  --tui
 ```
 
 **CLI Mode (Simple)**:
 ```bash
-cargo run --bin pp_client --release -- --username bob
+cargo run --bin pp_client --release -- \
+  --server http://localhost:8080 \
+  --username bob \
+  --password Secret456
 ```
+
+The client will:
+1. Try to login with provided credentials
+2. If user doesn't exist, automatically register them
+3. Show "Registered successfully!" and start the game
+
+#### Method 2: Using the HTTP API
+
+**Register a new user:**
+```bash
+curl -X POST http://localhost:8080/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "alice",
+    "password": "Pass123!",
+    "display_name": "Alice"
+  }'
+```
+
+**Response (success):**
+```json
+{
+  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
+  "refresh_token": "1359b93b-aac5-446d-92e4...",
+  "user_id": 1,
+  "username": "alice"
+}
+```
+
+**Login with existing user:**
+```bash
+curl -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "alice",
+    "password": "Pass123!"
+  }'
+```
+
+**Common Registration Errors:**
+- `"Password too weak: Password must contain..."` - Use stronger password
+- `"Username already exists"` - Choose different username
+- `"Username must be 3-20 characters"` - Adjust username length
 
 ### Running Bots
 
@@ -130,11 +198,19 @@ cargo run --bin pp_bots --release
 
 ### API Endpoints
 
-**Authentication**:
+**Authentication** (No auth required):
 - `POST /api/auth/register` - Create new account
+  - Body: `{"username": "alice", "password": "Pass123!", "display_name": "Alice"}`
+  - Returns: JWT tokens + user info
+  - Password must have: uppercase, lowercase, number, 8+ chars
 - `POST /api/auth/login` - Login and get JWT
+  - Body: `{"username": "alice", "password": "Pass123!"}`
+  - Returns: `{"access_token": "...", "refresh_token": "...", "user_id": 1, "username": "alice"}`
 - `POST /api/auth/refresh` - Refresh access token
-- `POST /api/auth/logout` - Logout
+  - Body: `{"refresh_token": "..."}`
+  - Returns: New access token
+- `POST /api/auth/logout` - Logout and invalidate token
+  - Requires: JWT in Authorization header
 
 **Tables**:
 - `GET /api/tables` - List all tables
