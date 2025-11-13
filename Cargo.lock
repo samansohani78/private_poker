@@ -2149,6 +2149,7 @@ dependencies = [
  "anyhow",
  "axum",
  "ctrlc",
+ "dotenvy",
  "env_logger",
  "futures-util",
  "http-body-util",

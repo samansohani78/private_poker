@@ -42,6 +42,9 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    // Load .env file if it exists
+    let _ = dotenvy::dotenv();
+
     let mut pargs = Arguments::from_env();
 
     // Help has a higher priority and should be handled separately.
