@@ -49,7 +49,8 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    // Load .env file if it exists
+    // Load .env file if it exists (searches current dir and parent dirs)
+    // Note: dotenvy does NOT override existing environment variables
     let _ = dotenvy::dotenv();
 
     let mut pargs = Arguments::from_env();
