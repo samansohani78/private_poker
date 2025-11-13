@@ -38,12 +38,22 @@ impl AuthManager {
     ///
     /// * `AuthManager` - New authentication manager instance
     pub fn new(pool: Arc<PgPool>, pepper: String, jwt_secret: String) -> Self {
+        let access_token_secs = std::env::var("JWT_ACCESS_TOKEN_EXPIRY")
+            .ok()
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(900); // 15 minutes
+
+        let refresh_token_secs = std::env::var("JWT_REFRESH_TOKEN_EXPIRY")
+            .ok()
+            .and_then(|v| v.parse::<i64>().ok())
+            .unwrap_or(604800); // 7 days
+
         Self {
             pool,
             pepper,
             jwt_secret,
-            access_token_duration: Duration::minutes(15), // 15 minutes
-            refresh_token_duration: Duration::days(7),    // 7 days
+            access_token_duration: Duration::seconds(access_token_secs),
+            refresh_token_duration: Duration::seconds(refresh_token_secs),
         }
     }
 
@@ -130,8 +140,14 @@ impl AuthManager {
         };
 
         // Create wallet for new user
-        sqlx::query("INSERT INTO wallets (user_id, balance) VALUES ($1, 10000)")
+        let default_balance: i64 = std::env::var("DEFAULT_WALLET_BALANCE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10000);
+
+        sqlx::query("INSERT INTO wallets (user_id, balance) VALUES ($1, $2)")
             .bind(user.id)
+            .bind(default_balance)
             .execute(self.pool.as_ref())
             .await?;
 

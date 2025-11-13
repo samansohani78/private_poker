@@ -25,9 +25,18 @@ impl RateLimitConfig {
     /// Configuration for login endpoint
     pub fn login() -> Self {
         Self {
-            max_attempts: 5,
-            window_secs: 300,  // 5 minutes
-            lockout_secs: 900, // 15 minutes
+            max_attempts: std::env::var("RATE_LIMIT_LOGIN_ATTEMPTS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(5),
+            window_secs: std::env::var("RATE_LIMIT_LOGIN_WINDOW_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(300),
+            lockout_secs: std::env::var("RATE_LIMIT_LOGIN_LOCKOUT_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(900),
             exponential_backoff: true,
         }
     }
@@ -35,9 +44,18 @@ impl RateLimitConfig {
     /// Configuration for registration endpoint
     pub fn register() -> Self {
         Self {
-            max_attempts: 3,
-            window_secs: 3600,  // 1 hour
-            lockout_secs: 3600, // 1 hour
+            max_attempts: std::env::var("RATE_LIMIT_REGISTER_ATTEMPTS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(3),
+            window_secs: std::env::var("RATE_LIMIT_REGISTER_WINDOW_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(3600),
+            lockout_secs: std::env::var("RATE_LIMIT_REGISTER_LOCKOUT_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(3600),
             exponential_backoff: false,
         }
     }
@@ -45,9 +63,18 @@ impl RateLimitConfig {
     /// Configuration for password reset endpoint
     pub fn password_reset() -> Self {
         Self {
-            max_attempts: 3,
-            window_secs: 3600,  // 1 hour
-            lockout_secs: 7200, // 2 hours
+            max_attempts: std::env::var("RATE_LIMIT_RESET_ATTEMPTS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(3),
+            window_secs: std::env::var("RATE_LIMIT_RESET_WINDOW_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(3600),
+            lockout_secs: std::env::var("RATE_LIMIT_RESET_LOCKOUT_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(7200),
             exponential_backoff: true,
         }
     }
@@ -55,9 +82,18 @@ impl RateLimitConfig {
     /// Configuration for chat messages
     pub fn chat() -> Self {
         Self {
-            max_attempts: 10,
-            window_secs: 60,   // 1 minute
-            lockout_secs: 300, // 5 minutes
+            max_attempts: std::env::var("RATE_LIMIT_CHAT_ATTEMPTS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(10),
+            window_secs: std::env::var("RATE_LIMIT_CHAT_WINDOW_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(60),
+            lockout_secs: std::env::var("RATE_LIMIT_CHAT_LOCKOUT_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(300),
             exponential_backoff: false,
         }
     }

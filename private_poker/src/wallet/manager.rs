@@ -29,11 +29,26 @@ impl WalletManager {
     ///
     /// * `WalletManager` - New wallet manager instance
     pub fn new(pool: Arc<PgPool>) -> Self {
+        let default_balance = std::env::var("DEFAULT_WALLET_BALANCE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10000);
+
+        let faucet_amount = std::env::var("FAUCET_AMOUNT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1000);
+
+        let faucet_cooldown_hours = std::env::var("FAUCET_COOLDOWN_HOURS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(24);
+
         Self {
             pool,
-            default_balance: 10000,               // Default starting balance
-            faucet_amount: 1000,                  // Daily faucet amount
-            faucet_cooldown: Duration::hours(24), // 24 hours between claims
+            default_balance,
+            faucet_amount,
+            faucet_cooldown: Duration::hours(faucet_cooldown_hours),
         }
     }
 
