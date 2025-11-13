@@ -14,19 +14,29 @@
 //!
 //! ## Example
 //!
-//! ```ignore
+//! ```no_run
 //! use private_poker::table::{TableActor, TableConfig};
 //! use private_poker::wallet::WalletManager;
+//! use private_poker::db::Database;
 //! use std::sync::Arc;
 //!
 //! #[tokio::main]
 //! async fn main() {
-//!     // Create database pool (example)
-//!     let pool = create_database_pool().await;
-//!     let wallet_manager = Arc::new(WalletManager::new(Arc::new(pool)));
-//!     let config = TableConfig::default();
+//!     // Example: Create database and wallet manager
+//!     # let config = private_poker::db::DatabaseConfig {
+//!     #     database_url: "postgres://localhost/test".to_string(),
+//!     #     max_connections: 5,
+//!     #     min_connections: 1,
+//!     #     connection_timeout_secs: 5,
+//!     #     idle_timeout_secs: 300,
+//!     #     max_lifetime_secs: 1800,
+//!     # };
+//!     # let db = Database::new(&config).await.unwrap();
+//!     let pool = Arc::new(db.pool().clone());
+//!     let wallet_manager = Arc::new(WalletManager::new(pool.clone()));
+//!     let table_config = TableConfig::default();
 //!
-//!     let (actor, handle) = TableActor::new(1, config, wallet_manager);
+//!     let (actor, handle) = TableActor::new(1, table_config, wallet_manager, pool);
 //!
 //!     // Spawn table actor
 //!     tokio::spawn(actor.run());

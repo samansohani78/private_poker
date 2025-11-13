@@ -30,16 +30,26 @@
 //!
 //! ## Example
 //!
-//! ```ignore
-//! use private_poker::bot::{BotManager, BotConfig};
+//! ```no_run
+//! use private_poker::bot::BotManager;
 //! use private_poker::table::TableConfig;
+//! use private_poker::db::Database;
 //! use std::sync::Arc;
 //!
 //! #[tokio::main]
 //! async fn main() {
+//!     // Example: Create database and bot manager
+//!     # let config = private_poker::db::DatabaseConfig {
+//!     #     database_url: "postgres://localhost/test".to_string(),
+//!     #     max_connections: 5,
+//!     #     min_connections: 1,
+//!     #     connection_timeout_secs: 5,
+//!     #     idle_timeout_secs: 300,
+//!     #     max_lifetime_secs: 1800,
+//!     # };
+//!     # let db = Database::new(&config).await.unwrap();
+//!     let db_pool = Arc::new(db.pool().clone());
 //!     let table_config = TableConfig::default();
-//!     // Create database pool (example)
-//!     let db_pool = Arc::new(create_database_pool().await);
 //!     let mut bot_manager = BotManager::new(1, table_config, db_pool);
 //!
 //!     // Auto-adjust bots based on human count

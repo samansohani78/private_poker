@@ -78,10 +78,13 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    #[ignore] // Requires database to be running
     async fn test_database_connection() {
+        // Use DATABASE_URL environment variable or default test database
+        let database_url = std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://poker_test:test_password@localhost/poker_test".to_string());
+
         let config = DatabaseConfig {
-            database_url: "postgres://postgres@localhost/poker_db".to_string(),
+            database_url,
             max_connections: 5,
             min_connections: 1,
             connection_timeout_secs: 5,

@@ -639,21 +639,8 @@ impl App {
         .block(
             block::Block::bordered()
                 .padding(Padding::uniform(1))
-                .title(
-                    block::Title::from(make_board_spans(view))
-                        .position(block::Position::Top)
-                        .alignment(Alignment::Left),
-                )
-                .title(
-                    block::Title::from(format!(" blinds: {}  ", view.blinds))
-                        .position(block::Position::Bottom)
-                        .alignment(Alignment::Right),
-                )
-                .title(
-                    block::Title::from(format!(" pot: {}  ", view.pot))
-                        .position(block::Position::Bottom)
-                        .alignment(Alignment::Left),
-                ),
+                .title_top(make_board_spans(view))
+                .title_bottom(format!(" blinds: {}  pot: {}  ", view.blinds, view.pot)),
         );
         frame.render_widget(table, area);
     }

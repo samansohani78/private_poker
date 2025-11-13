@@ -248,9 +248,9 @@ impl BotPlayer {
     /// Get thinking delay in milliseconds (with randomization)
     pub fn get_think_delay_ms(&self) -> u64 {
         use rand::Rng;
-        let mut rng = rand::thread_rng();
-        let variance = rng.gen_range(0..=self.params.think_time_variance_ms);
-        let sign = if rng.gen_bool(0.5) { 1 } else { -1 };
+        let mut rng = rand::rng();
+        let variance = rng.random_range(0..=self.params.think_time_variance_ms);
+        let sign = if rng.random_bool(0.5) { 1 } else { -1 };
 
         let delay = self.params.base_think_time_ms as i64 + (variance as i64 * sign);
         delay.max(500) as u64 // Minimum 500ms

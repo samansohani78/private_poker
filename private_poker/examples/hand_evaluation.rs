@@ -62,7 +62,7 @@ fn main() {
     // Example 3: Multiple hands with a tie
     println!("\n\nExample 3: Three-way comparison with a tie");
 
-    let hands = vec![
+    let hands = [
         vec![
             Card(10, Suit::Heart),
             Card(10, Suit::Diamond),

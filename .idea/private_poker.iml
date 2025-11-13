@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="EMPTY_MODULE" version="4">
+  <component name="NewModuleRootManager">
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/pp_bots/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/pp_client/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/pp_server/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/private_poker/benches" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/private_poker/examples" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/private_poker/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/private_poker/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/pp_server/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/pp_client/tests" isTestSource="true" />
+      <excludeFolder url="file://$MODULE_DIR$/target" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+</module>

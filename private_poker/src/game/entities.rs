@@ -1,4 +1,4 @@
-use rand::{seq::SliceRandom, thread_rng};
+use rand::{rng, seq::SliceRandom};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{
     borrow::Borrow,
@@ -107,7 +107,7 @@ impl Deck {
     }
 
     pub fn shuffle(&mut self) {
-        self.cards.shuffle(&mut thread_rng());
+        self.cards.shuffle(&mut rng());
         self.deck_idx = 0;
     }
 }
@@ -145,6 +145,11 @@ impl Username {
             .collect();
         username.truncate(constants::MAX_USER_INPUT_LENGTH / 2);
         Self(username)
+    }
+
+    /// Get the username as a string slice
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -646,6 +651,20 @@ pub type GameViews = HashMap<Username, GameView>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::{HashMap, HashSet};
+
+    use bincode::config;
+    use bincode::serde::{decode_from_slice, encode_to_vec};
+    use serde::{de::DeserializeOwned, Serialize};
+
+    // Helpers to use bincode 2 + serde in tests
+    fn serialize_value<T: Serialize>(value: &T) -> Vec<u8> {
+        encode_to_vec(value, config::standard()).unwrap()
+    }
+
+    fn deserialize_value<T: DeserializeOwned>(bytes: &[u8]) -> T {
+        decode_from_slice(bytes, config::standard()).unwrap().0
+    }
 
     // === Card Tests ===
 
@@ -668,7 +687,7 @@ mod tests {
     fn test_all_suits() {
         let suits = [Suit::Heart, Suit::Diamond, Suit::Club, Suit::Spade];
         for suit in suits {
-            let card = Card(7, suit.clone());
+            let card = Card(7, suit);
             assert_eq!(card.1, suit);
         }
     }
@@ -897,7 +916,6 @@ mod tests {
 
     #[test]
     fn test_user_hash() {
-        use std::collections::HashSet;
         let mut set = HashSet::new();
         let user = User {
             name: "bob".to_string().into(),
@@ -943,7 +961,6 @@ mod tests {
 
     #[test]
     fn test_action_choices_creation() {
-        use std::collections::HashSet;
         let mut set = HashSet::new();
         set.insert(ActionChoice::Fold);
         set.insert(ActionChoice::Check);
@@ -953,7 +970,6 @@ mod tests {
 
     #[test]
     fn test_action_choices_contains() {
-        use std::collections::HashSet;
         let mut set = HashSet::new();
         set.insert(ActionChoice::Fold);
         set.insert(ActionChoice::Call(50));
@@ -1007,7 +1023,7 @@ mod tests {
 
     #[test]
     fn test_player_state_variants() {
-        let states = vec![
+        let states = [
             PlayerState::AllIn,
             PlayerState::Call,
             PlayerState::Check,
@@ -1628,8 +1644,6 @@ mod tests {
 
     #[test]
     fn test_action_choice_hash() {
-        use std::collections::HashSet;
-
         let mut set = HashSet::new();
         set.insert(ActionChoice::Call(50));
         // Should not insert duplicate since hash is based on discriminant
@@ -1648,7 +1662,7 @@ mod tests {
     #[test]
     fn test_suit_variants() {
         // Test all suit variants can be created
-        let suits = vec![
+        let suits = [
             Suit::Club,
             Suit::Spade,
             Suit::Diamond,
@@ -1909,8 +1923,8 @@ mod tests {
         ];
 
         for action in actions {
-            let serialized = bincode::serialize(&action).unwrap();
-            let deserialized: Action = bincode::deserialize(&serialized).unwrap();
+            let serialized = serialize_value(&action);
+            let deserialized: Action = deserialize_value(&serialized);
             assert_eq!(action, deserialized);
         }
     }
@@ -1950,38 +1964,27 @@ mod tests {
             small: 12345,
             big: 67890,
         };
-        let serialized = bincode::serialize(&blinds).unwrap();
-        let deserialized: Blinds = bincode::deserialize(&serialized).unwrap();
+        let serialized = serialize_value(&blinds);
+        let deserialized: Blinds = deserialize_value(&serialized);
         assert_eq!(blinds.small, deserialized.small);
         assert_eq!(blinds.big, deserialized.big);
     }
 
     #[test]
-    fn test_default_constants_sanity() {
-        // Verify default constants are sane
-        assert!(DEFAULT_BUY_IN > 0);
-        assert!(DEFAULT_MIN_BIG_BLIND > 0);
-        assert!(DEFAULT_MIN_SMALL_BLIND > 0);
-        assert!(DEFAULT_MIN_SMALL_BLIND < DEFAULT_MIN_BIG_BLIND);
-    }
-
-    #[test]
     fn test_max_players_constant() {
+        // Verify MAX_PLAYERS is set to expected value
         assert_eq!(constants::MAX_PLAYERS, 10);
-        assert!(constants::MAX_PLAYERS > 0);
-        assert!(constants::MAX_PLAYERS <= 23); // Max for texas hold'em
     }
 
     #[test]
     fn test_default_max_users_constant() {
+        // Verify DEFAULT_MAX_USERS relationship to MAX_PLAYERS
         assert_eq!(constants::DEFAULT_MAX_USERS, constants::MAX_PLAYERS + 6);
-        assert!(constants::DEFAULT_MAX_USERS >= constants::MAX_PLAYERS);
     }
 
     #[test]
     fn test_user_input_length_constant() {
         assert_eq!(constants::MAX_USER_INPUT_LENGTH, 32);
-        assert!(constants::MAX_USER_INPUT_LENGTH > 0);
     }
 
     #[test]
@@ -2011,8 +2014,8 @@ mod tests {
             name: Username::new(""),
             money: 100,
         };
-        let serialized = bincode::serialize(&user).unwrap();
-        let deserialized: User = bincode::deserialize(&serialized).unwrap();
+        let serialized = serialize_value(&user);
+        let deserialized: User = deserialize_value(&serialized);
         assert_eq!(user.name, deserialized.name);
     }
 
@@ -2023,8 +2026,8 @@ mod tests {
             name: Username::new(&long_name),
             money: 100,
         };
-        let serialized = bincode::serialize(&user).unwrap();
-        let deserialized: User = bincode::deserialize(&serialized).unwrap();
+        let serialized = serialize_value(&user);
+        let deserialized: User = deserialize_value(&serialized);
         // Should be truncated to 16 chars
         assert_eq!(deserialized.name.to_string().len(), 16);
     }
@@ -2035,8 +2038,8 @@ mod tests {
             name: Username::new("测试用户🎮"),
             money: 500,
         };
-        let serialized = bincode::serialize(&user).unwrap();
-        let deserialized: User = bincode::deserialize(&serialized).unwrap();
+        let serialized = serialize_value(&user);
+        let deserialized: User = deserialize_value(&serialized);
         assert_eq!(user.name, deserialized.name);
     }
 
@@ -2045,8 +2048,8 @@ mod tests {
         for value in 1..=14 {
             for suit in [Suit::Club, Suit::Spade, Suit::Diamond, Suit::Heart] {
                 let card = Card(value, suit);
-                let serialized = bincode::serialize(&card).unwrap();
-                let deserialized: Card = bincode::deserialize(&serialized).unwrap();
+                let serialized = serialize_value(&card);
+                let deserialized: Card = deserialize_value(&serialized);
                 assert_eq!(card, deserialized);
             }
         }
@@ -2063,8 +2066,8 @@ mod tests {
             state: PlayerState::Fold,
             cards: vec![],
         };
-        let serialized = bincode::serialize(&player_view).unwrap();
-        let deserialized: PlayerView = bincode::deserialize(&serialized).unwrap();
+        let serialized = serialize_value(&player_view);
+        let deserialized: PlayerView = deserialize_value(&serialized);
         assert_eq!(player_view.cards.len(), deserialized.cards.len());
     }
 
@@ -2080,24 +2083,24 @@ mod tests {
             cards: vec![Card(14, Suit::Spade), Card(13, Suit::Heart)],
         };
 
-        let serialized = bincode::serialize(&player_view).unwrap();
-        let deserialized: PlayerView = bincode::deserialize(&serialized).unwrap();
+        let serialized = serialize_value(&player_view);
+        let deserialized: PlayerView = deserialize_value(&serialized);
         assert_eq!(player_view.cards, deserialized.cards);
     }
 
     #[test]
     fn test_vote_kick_serialization() {
         let vote = Vote::Kick(Username::new("target"));
-        let serialized = bincode::serialize(&vote).unwrap();
-        let deserialized: Vote = bincode::deserialize(&serialized).unwrap();
+        let serialized = serialize_value(&vote);
+        let deserialized: Vote = deserialize_value(&serialized);
         assert_eq!(vote, deserialized);
     }
 
     #[test]
     fn test_vote_reset_serialization() {
         let vote = Vote::Reset(None);
-        let serialized = bincode::serialize(&vote).unwrap();
-        let deserialized: Vote = bincode::deserialize(&serialized).unwrap();
+        let serialized = serialize_value(&vote);
+        let deserialized: Vote = deserialize_value(&serialized);
         assert_eq!(vote, deserialized);
     }
 

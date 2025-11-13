@@ -13,7 +13,7 @@ impl SeatRandomizer {
     /// Create a new seat randomizer
     pub fn new() -> Self {
         Self {
-            rng: rand::thread_rng(),
+            rng: rand::rng(),
         }
     }
 

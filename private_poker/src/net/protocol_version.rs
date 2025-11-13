@@ -39,6 +39,18 @@ impl Default for ProtocolVersion {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bincode::config;
+    use bincode::serde::{decode_from_slice, encode_to_vec};
+    use serde::{de::DeserializeOwned, Serialize};
+
+    // Small helpers to keep tests readable and consistent with bincode 2
+    fn serialize_value<T: Serialize>(value: &T) -> Vec<u8> {
+        encode_to_vec(value, config::standard()).unwrap()
+    }
+
+    fn deserialize_value<T: DeserializeOwned>(bytes: &[u8]) -> T {
+        decode_from_slice(bytes, config::standard()).unwrap().0
+    }
 
     #[test]
     fn test_current_version() {
@@ -56,8 +68,8 @@ mod tests {
     #[test]
     fn test_serialization() {
         let v1 = ProtocolVersion::V1;
-        let serialized = bincode::serialize(&v1).unwrap();
-        let deserialized: ProtocolVersion = bincode::deserialize(&serialized).unwrap();
+        let serialized = serialize_value(&v1);
+        let deserialized: ProtocolVersion = deserialize_value(&serialized);
         assert_eq!(v1, deserialized);
     }
 }

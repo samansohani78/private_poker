@@ -1,9 +1,34 @@
-use bincode::{ErrorKind, deserialize, serialize};
-use serde::{Serialize, de::DeserializeOwned};
 use std::io::{self, Read, Write};
+
+use bincode::config;
+use bincode::error::{DecodeError, EncodeError};
+use bincode::serde::{decode_from_slice, encode_to_vec};
+use serde::{de::DeserializeOwned, Serialize};
 
 /// Maximum allowed message size (1MB) to prevent DoS attacks via unbounded allocation
 const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
+
+/// Map a bincode decode error into an `io::Error` for the network layer.
+fn map_decode_error(err: DecodeError) -> io::Error {
+    match err {
+        // If bincode itself encountered an io error, propagate it
+        DecodeError::Io { inner, .. } => inner,
+        // Not enough bytes to decode the value -> treat as UnexpectedEof
+        DecodeError::UnexpectedEnd { .. } => {
+            io::Error::new(io::ErrorKind::UnexpectedEof, err)
+        }
+        // Everything else is bad data
+        _ => io::Error::new(io::ErrorKind::InvalidData, err),
+    }
+}
+
+/// Map a bincode encode error into an `io::Error`.
+fn map_encode_error(err: EncodeError) -> io::Error {
+    match err {
+        EncodeError::Io { inner, .. } => inner,
+        _ => io::Error::new(io::ErrorKind::InvalidData, err),
+    }
+}
 
 pub fn read_prefixed<T: DeserializeOwned, R: Read>(reader: &mut R) -> io::Result<T> {
     // Read the size as a u32
@@ -34,46 +59,41 @@ pub fn read_prefixed<T: DeserializeOwned, R: Read>(reader: &mut R) -> io::Result
             io::ErrorKind::WouldBlock => io::ErrorKind::InvalidData,
             error => error,
         };
-        return Err(kind.into());
+        return Err(io::Error::new(kind, error));
     }
 
-    match deserialize(&buf) {
-        Ok(value) => Ok(value),
-        Err(error) => match *error {
-            ErrorKind::Io(error) => Err(error),
-            _ => Err(io::ErrorKind::InvalidData.into()),
-        },
-    }
+    // Decode with bincode 2 + serde, preserving detailed error kinds.
+    decode_from_slice::<T, _>(&buf, config::standard())
+        .map(|(value, _bytes_read)| value)
+        .map_err(map_decode_error)
 }
 
 pub fn write_prefixed<T: Serialize, W: Write>(writer: &mut W, value: &T) -> io::Result<()> {
-    match serialize(&value) {
-        Ok(serialized) => {
-            // Validate message size before sending
-            if serialized.len() > MAX_MESSAGE_SIZE {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!(
-                        "serialized message size {} exceeds maximum allowed size of {} bytes",
-                        serialized.len(),
-                        MAX_MESSAGE_SIZE
-                    ),
-                ));
-            }
+    // Encode with bincode 2 + serde
+    let serialized =
+        encode_to_vec(value, config::standard()).map_err(map_encode_error)?;
 
-            // Write the size of the serialized data and the serialized data
-            // all in one chunk to prevent read-side EOF race conditions.
-            let size = serialized.len() as u32;
-            let mut buf = Vec::from(size.to_le_bytes());
-            buf.extend(serialized);
-            writer.write_all(&buf)?;
-            Ok(())
-        }
-        Err(error) => match *error {
-            ErrorKind::Io(error) => Err(error),
-            _ => Err(io::ErrorKind::InvalidData.into()),
-        },
+    // Validate message size before sending
+    if serialized.len() > MAX_MESSAGE_SIZE {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "serialized message size {} exceeds maximum allowed size of {} bytes",
+                serialized.len(),
+                MAX_MESSAGE_SIZE
+            ),
+        ));
     }
+
+    // Write the size of the serialized data and the serialized data
+    // all in one chunk to prevent read-side EOF race conditions.
+    let size = serialized.len() as u32;
+    let mut buf = Vec::with_capacity(4 + serialized.len());
+    buf.extend_from_slice(&size.to_le_bytes());
+    buf.extend_from_slice(&serialized);
+
+    writer.write_all(&buf)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -234,10 +254,9 @@ mod tests {
         assert!(write_prefixed(&mut stream, &true).is_ok());
         assert!(write_prefixed(&mut stream, &false).is_ok());
 
-        assert_eq!(read_prefixed::<bool, TcpStream>(&mut client).unwrap(), true);
-        assert_eq!(
-            read_prefixed::<bool, TcpStream>(&mut client).unwrap(),
-            false
+        assert!(read_prefixed::<bool, TcpStream>(&mut client).unwrap());
+        assert!(
+            !read_prefixed::<bool, TcpStream>(&mut client).unwrap()
         );
     }
 

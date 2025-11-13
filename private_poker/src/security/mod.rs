@@ -24,14 +24,24 @@
 //!
 //! ## Example
 //!
-//! ```ignore
+//! ```no_run
 //! use private_poker::security::{RateLimiter, AntiCollusionDetector};
+//! use private_poker::db::Database;
 //! use std::sync::Arc;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), String> {
-//!     // Create database pool (example)
-//!     let db_pool = Arc::new(create_database_pool().await);
+//!     // Example: Create database connection
+//!     # let config = private_poker::db::DatabaseConfig {
+//!     #     database_url: "postgres://localhost/test".to_string(),
+//!     #     max_connections: 5,
+//!     #     min_connections: 1,
+//!     #     connection_timeout_secs: 5,
+//!     #     idle_timeout_secs: 300,
+//!     #     max_lifetime_secs: 1800,
+//!     # };
+//!     # let db = Database::new(&config).await.map_err(|e| e.to_string())?;
+//!     let db_pool = Arc::new(db.pool().clone());
 //!
 //!     // Rate limiting
 //!     let rate_limiter = RateLimiter::new(db_pool.clone());

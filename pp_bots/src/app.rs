@@ -217,7 +217,7 @@ impl App {
             [Constraint::Fill(1), Constraint::Fill(1)],
         )
         .block(block::Block::bordered().padding(Padding::uniform(1)))
-        .highlight_style(Style::new().bg(ratatui::style::Color::White));
+        .row_highlight_style(Style::new().bg(ratatui::style::Color::White));
         frame.render_stateful_widget(table, table_area, &mut self.table_state);
 
         // Render user input help message.

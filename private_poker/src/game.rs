@@ -1915,6 +1915,47 @@ impl PokerState {
             _ => Err(UserError::OutOfTurnAction),
         }
     }
+
+    /// Add chips to a player's stack
+    ///
+    /// # Arguments
+    ///
+    /// * `username` - Username of the player
+    /// * `amount` - Amount of chips to add
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Chips added successfully
+    /// * `Err(UserError)` - Player not found
+    pub fn add_chips_to_player(&mut self, username: &Username, amount: Usd) -> Result<(), UserError> {
+        // Helper function to add chips to a player in the game data
+        fn add_chips<T>(game: &mut Game<T>, username: &Username, amount: Usd) -> Result<(), UserError> {
+            // Find player and add chips
+            if let Some(player) = game.data.players.iter_mut().find(|p| &p.user.name == username) {
+                player.user.money += amount;
+                Ok(())
+            } else {
+                Err(UserError::UserDoesNotExist)
+            }
+        }
+
+        match self {
+            Self::Lobby(game) => add_chips(game, username, amount),
+            Self::SeatPlayers(game) => add_chips(game, username, amount),
+            Self::MoveButton(game) => add_chips(game, username, amount),
+            Self::CollectBlinds(game) => add_chips(game, username, amount),
+            Self::Deal(game) => add_chips(game, username, amount),
+            Self::TakeAction(game) => add_chips(game, username, amount),
+            Self::Flop(game) => add_chips(game, username, amount),
+            Self::Turn(game) => add_chips(game, username, amount),
+            Self::River(game) => add_chips(game, username, amount),
+            Self::ShowHands(game) => add_chips(game, username, amount),
+            Self::DistributePot(game) => add_chips(game, username, amount),
+            Self::RemovePlayers(game) => add_chips(game, username, amount),
+            Self::UpdateBlinds(game) => add_chips(game, username, amount),
+            Self::BootPlayers(game) => add_chips(game, username, amount),
+        }
+    }
 }
 
 impl From<GameSettings> for PokerState {
@@ -2940,11 +2981,13 @@ mod state_tests {
     #[test]
     fn test_blind_collection_with_short_stack() {
         // Test that blind collection works correctly when player has less than blind
-        let mut settings = GameSettings::default();
-        settings.buy_in = 100;
-        settings.min_small_blind = 50;
-        settings.min_big_blind = 100;
-        settings.max_players = 2;
+        let settings = GameSettings {
+            buy_in: 100,
+            min_small_blind: 50,
+            min_big_blind: 100,
+            max_players: 2,
+            ..Default::default()
+        };
 
         let mut state: PokerState = settings.into();
         let alice = Username::new("alice");

@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{
     bot::BotManager,
-    game::{PokerState, entities::{Username, Action}, GameStateManagement, PhaseIndependentUserManagement, PhaseDependentUserManagement},
+    game::{PokerState, entities::{Username, Action, GameView}, GameStateManagement, PhaseIndependentUserManagement, PhaseDependentUserManagement},
     wallet::{TableId, WalletManager},
 };
 use sqlx::PgPool;
@@ -195,6 +195,11 @@ impl TableActor {
 
             TableMessage::GetState { user_id, response } => {
                 let result = self.get_state(user_id).await;
+                let _ = response.send(result);
+            }
+
+            TableMessage::GetGameView { user_id, response } => {
+                let result = self.get_game_view(user_id);
                 let _ = response.send(result);
             }
 
@@ -465,6 +470,8 @@ impl TableActor {
         let mut pot_size = 0;
         let mut phase = "Lobby".to_string();
         let mut players = vec![];
+        let mut waitlist_count = 0;
+        let mut spectator_count = 0;
 
         // Get view for requesting user or any view if no user specified
         if let Some(uid) = user_id
@@ -474,10 +481,14 @@ impl TableActor {
             pot_size = view.pot.size as i64;
             phase = if player_count > 0 { "Playing".to_string() } else { "Lobby".to_string() };
             players = view.players.iter().map(|p| p.user.name.to_string()).collect();
+            waitlist_count = view.waitlist.len();
+            spectator_count = view.spectators.len();
         } else if let Some((_, view)) = views.iter().next() {
             pot_size = view.pot.size as i64;
             phase = if player_count > 0 { "Playing".to_string() } else { "Lobby".to_string() };
             players = view.players.iter().map(|p| p.user.name.to_string()).collect();
+            waitlist_count = view.waitlist.len();
+            spectator_count = view.spectators.len();
         }
 
         TableStateResponse {
@@ -485,8 +496,8 @@ impl TableActor {
             table_name: self.config.name.clone(),
             player_count,
             max_players: self.config.max_players,
-            waitlist_count: 0, // TODO: track waitlist separately
-            spectator_count: 0, // TODO: track spectators separately
+            waitlist_count,
+            spectator_count,
             small_blind: self.config.small_blind,
             big_blind: self.config.big_blind,
             pot_size,
@@ -496,6 +507,27 @@ impl TableActor {
             is_private: self.config.is_private,
             speed: self.config.speed.to_string(),
         }
+    }
+
+    /// Get game view for a specific user
+    fn get_game_view(&self, user_id: i64) -> Option<GameView> {
+        // Get username from user_id
+        let username = self.user_mapping.get(&user_id)?;
+
+        // Get all views
+        let views = self.state.get_views();
+
+        // Return view for this user (Arc clones are cheap)
+        views.get(username).map(|view| GameView {
+            blinds: view.blinds.clone(),
+            spectators: view.spectators.clone(),
+            waitlist: view.waitlist.clone(),
+            open_seats: view.open_seats.clone(),
+            players: view.players.clone(),
+            board: view.board.clone(),
+            pot: view.pot.clone(),
+            play_positions: view.play_positions.clone(),
+        })
     }
 
     /// Handle spectate request
@@ -591,7 +623,7 @@ impl TableActor {
         }
 
         // Get username
-        let _username = match self.user_mapping.get(&user_id) {
+        let username = match self.user_mapping.get(&user_id) {
             Some(u) => u.clone(),
             None => {
                 return TableResponse::Error("User not at table".to_string());
@@ -606,7 +638,12 @@ impl TableActor {
             .await
         {
             Ok(_) => {
-                // TODO: Update player stack in PokerState
+                // Update player stack in PokerState
+                if let Err(e) = self.state.add_chips_to_player(&username, amount as u32) {
+                    log::error!("Failed to add chips to player {}: {:?}", username, e);
+                    return TableResponse::Error("Failed to update player stack".to_string());
+                }
+
                 self.top_up_tracker.insert(user_id, self.hand_count);
                 TableResponse::Success
             }
@@ -616,24 +653,95 @@ impl TableActor {
 
     /// Handle bot turns
     async fn handle_bot_turns(&mut self) {
+        use crate::bot::decision::BotDecisionMaker;
+
         // Check if it's a bot's turn
         if let Some(next_username) = self.state.get_next_action_username() {
             // Check if this username is a bot (not in username_mapping means it's a bot)
             if !self.username_mapping.contains_key(&next_username) {
-                // It's a bot's turn
-                // TODO: Implement bot decision making
-                // For now, bots will just check/fold
-                if let Some(action_choices) = self.state.get_action_choices() {
-                    let action = if action_choices.contains(&Action::Check) {
-                        Action::Check
-                    } else {
-                        Action::Fold
-                    };
-                    log::debug!("Bot {} taking action: {:?}", next_username, action);
-                    let _ = self.state.take_action(&next_username, action);
+                // Look up bot player to get difficulty parameters
+                if let Some(bot_player) = self.bot_manager.get_bot_by_username(next_username.as_str()).await {
+                    // Get action choices and game view
+                    if let Some(action_choices) = self.state.get_action_choices() {
+                        let views = self.state.get_views();
+                        if let Some(bot_view) = views.get(&next_username) {
+                            // Get bot's player view
+                            let bot_player_view = bot_view.players
+                                .iter()
+                                .find(|p| p.user.name == next_username);
+
+                            if let Some(player_view) = bot_player_view {
+                                let hole_cards = &player_view.cards;
+                                let board_cards = bot_view.board.as_slice();
+                                let pot_size = bot_view.pot.size;
+                                let bot_chips = player_view.user.money;
+
+                                // Get current bet amount from the pot
+                                let current_bet = bot_view.players
+                                    .iter()
+                                    .map(|p| p.user.money) // This is simplified - ideally we'd track bets
+                                    .max()
+                                    .unwrap_or_default();
+
+                                // Use decision maker with bot's difficulty parameters
+                                let mut decision_maker = BotDecisionMaker::new();
+                                let can_check = action_choices.contains(&Action::Check);
+
+                                // Get position and player count from game views
+                                let views = self.state.get_views();
+                                let (position, players_in_hand) = if let Some((_, view)) = views.iter().next() {
+                                    // Find bot's position among active players
+                                    let bot_position = view.players.iter()
+                                        .position(|p| p.user.name == next_username);
+                                    let active_count = view.players.len();
+                                    (bot_position, active_count)
+                                } else {
+                                    (None, 2) // Default to heads-up if no view
+                                };
+
+                                let action = decision_maker.decide_action(
+                                    &bot_player,
+                                    hole_cards,
+                                    board_cards,
+                                    pot_size,
+                                    current_bet,
+                                    bot_chips,
+                                    can_check,
+                                    position,
+                                    players_in_hand,
+                                );
+
+                                log::debug!("Bot {} ({:?}) at position {:?} taking action: {:?}",
+                                    next_username, bot_player.config.difficulty, position, action);
+                                let _ = self.state.take_action(&next_username, action);
+                            } else {
+                                // Fallback: check or fold
+                                self.take_fallback_action(&next_username, &action_choices).await;
+                            }
+                        } else {
+                            // Fallback: check or fold
+                            self.take_fallback_action(&next_username, &action_choices).await;
+                        }
+                    }
+                } else {
+                    // Bot not found in manager, use simple fallback
+                    if let Some(action_choices) = self.state.get_action_choices() {
+                        self.take_fallback_action(&next_username, &action_choices).await;
+                    }
                 }
             }
         }
+    }
+
+    /// Take fallback action (check if possible, otherwise fold)
+    async fn take_fallback_action(&mut self, username: &crate::entities::Username, action_choices: &crate::entities::ActionChoices) {
+        let action = if action_choices.contains(&Action::Check) {
+            Action::Check
+        } else {
+            Action::Fold
+        };
+        log::debug!("Bot {} taking fallback action: {:?}", username, action);
+        let _ = self.state.take_action(username, action);
     }
 
     /// Advance game state (called periodically)

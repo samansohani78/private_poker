@@ -6,7 +6,7 @@ use private_poker::{
     messages::{ClientMessage, ServerMessage, UserCommand, UserState},
     utils,
 };
-use rand::{Rng, distributions::WeightedIndex, prelude::Distribution, thread_rng};
+use rand::Rng;
 use std::{
     collections::{HashMap, HashSet},
     net::{SocketAddr, TcpStream},
@@ -37,7 +37,6 @@ struct QLearningParams {
 
 pub struct QLearning {
     params: QLearningParams,
-    dist: WeightedIndex<ActionWeight>,
     table: HashMap<State, ActionWeights>,
 }
 
@@ -45,7 +44,6 @@ impl QLearning {
     pub fn new(alpha: f32, gamma: f32) -> Self {
         Self {
             params: QLearningParams { alpha, gamma },
-            dist: WeightedIndex::new(Q_S_DEFAULT).expect("weights should be valid"),
             table: HashMap::new(),
         }
     }
@@ -63,17 +61,33 @@ impl QLearning {
                 }
             })
             .collect();
-        let new_weights: Vec<(usize, &ActionWeight)> = new_weights.iter().enumerate().collect();
-        self.dist
-            .update_weights(&new_weights)
-            .expect("weights should be valid");
-        let action_idx = self.dist.sample(&mut thread_rng());
-        let action_choice = &ACTION_OPTIONS_ARRAY[action_idx];
-        masks
-            .0
-            .get(action_choice)
-            .expect("action choice should be valid")
-            .clone()
+
+        // Manual weighted sampling
+        let total: f32 = new_weights.iter().sum();
+        if total == 0.0 {
+            // Fallback: just pick first valid action
+            return masks.0.iter().next().cloned().unwrap_or(ActionChoice::Fold);
+        }
+
+        let mut rng = rand::rng();
+        let mut random_value: f32 = rng.random_range(0.0..total);
+
+        for (idx, weight) in new_weights.iter().enumerate() {
+            if *weight > 0.0 {
+                if random_value < *weight {
+                    let action_choice = &ACTION_OPTIONS_ARRAY[idx];
+                    return masks
+                        .0
+                        .get(action_choice)
+                        .expect("action choice should be valid")
+                        .clone();
+                }
+                random_value -= weight;
+            }
+        }
+
+        // Fallback if rounding errors occur
+        masks.0.iter().next().cloned().unwrap_or(ActionChoice::Fold)
     }
 
     pub fn update_done(&mut self, state: State, action: ActionChoice, reward: Reward) {
@@ -197,7 +211,8 @@ impl Bot {
             .find(|p| p.user.name == self.client.username)
             .expect("player should exist");
         // Sleep some random amount so real users have time to process info.
-        let dur = Duration::from_secs(thread_rng().gen_range(1..8));
+        let mut rng = rand::rng();
+        let dur = Duration::from_secs(rng.random_range(1..8));
         thread::sleep(dur);
         let bet = match action_choice {
             ActionChoice::AllIn => player.user.money,

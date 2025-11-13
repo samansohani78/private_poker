@@ -398,7 +398,7 @@ proptest! {
         };
 
         // Make sure values are unique
-        let mut unique_values: Vec<u8> = values.iter().copied().collect();
+        let mut unique_values: Vec<u8> = values.to_vec();
         unique_values.sort_unstable();
         unique_values.dedup();
         prop_assume!(unique_values.len() >= 5);
@@ -467,7 +467,7 @@ proptest! {
         for subhand in &hand {
             for &value in &subhand.values {
                 // Values should be in valid range (1-14, ace can be 1 or 14)
-                prop_assert!(value >= 1 && value <= 14, "Card value should be 1-14");
+                prop_assert!((1..=14).contains(&value), "Card value should be 1-14");
             }
         }
     }

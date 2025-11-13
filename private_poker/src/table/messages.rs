@@ -1,6 +1,6 @@
 //! Table actor message types.
 
-use crate::game::entities::Action;
+use crate::game::entities::{Action, GameView};
 use crate::wallet::TableId;
 use tokio::sync::oneshot;
 
@@ -33,6 +33,12 @@ pub enum TableMessage {
     GetState {
         user_id: Option<i64>,
         response: oneshot::Sender<TableStateResponse>,
+    },
+
+    /// Get game view for a specific user
+    GetGameView {
+        user_id: i64,
+        response: oneshot::Sender<Option<GameView>>,
     },
 
     /// Spectate table (read-only)
@@ -132,7 +138,7 @@ pub enum TableResponse {
 }
 
 /// Table state response
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct TableStateResponse {
     /// Table ID
     pub table_id: TableId,

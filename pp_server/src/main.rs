@@ -3,6 +3,8 @@
 //! This server spawns TableActor instances managed by TableManager,
 //! with database-backed authentication and wallet systems.
 
+mod api;
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -11,6 +13,7 @@ use ctrlc::set_handler;
 use log::info;
 use pico_args::Arguments;
 use private_poker::{
+    auth::AuthManager,
     db::{Database, DatabaseConfig},
     table::{TableConfig, TableManager, TableSpeed, BotDifficulty},
     wallet::WalletManager,
@@ -89,6 +92,13 @@ async fn main() -> Result<(), Error> {
     let wallet_manager = Arc::new(WalletManager::new(pool.clone()));
     let table_manager = Arc::new(TableManager::new(pool.clone(), wallet_manager.clone()));
 
+    let jwt_secret = std::env::var("JWT_SECRET")
+        .unwrap_or_else(|_| "default_jwt_secret_change_in_production".to_string());
+    let pepper = std::env::var("PASSWORD_PEPPER")
+        .unwrap_or_else(|_| "default_pepper_change_in_production".to_string());
+
+    let auth_manager = Arc::new(AuthManager::new(pool.clone(), pepper, jwt_secret));
+
     info!("Creating {} initial table(s)...", args.num_tables);
 
     // Create initial tables
@@ -146,13 +156,37 @@ async fn main() -> Result<(), Error> {
         }
     }
 
-    info!("Server is running. Press Ctrl+C to stop.");
+    // Create API state
+    let api_state = api::AppState {
+        auth_manager,
+        table_manager,
+        wallet_manager,
+    };
 
-    // Keep server running
-    // TODO: Add HTTP API or WebSocket server here
-    tokio::signal::ctrl_c().await?;
+    // Create router
+    let app = api::create_router(api_state);
+
+    // Start HTTP server
+    info!("Starting HTTP/WebSocket server on {}", args.bind);
+    let listener = tokio::net::TcpListener::bind(args.bind)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to bind to {}: {}", args.bind, e))?;
+
+    info!("Server is running at http://{}. Press Ctrl+C to stop.", args.bind);
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
 
     info!("Shutting down server...");
 
     Ok(())
+}
+
+/// Graceful shutdown signal
+async fn shutdown_signal() {
+    tokio::signal::ctrl_c()
+        .await
+        .expect("Failed to install CTRL+C signal handler");
 }

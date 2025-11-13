@@ -189,6 +189,20 @@ impl BotManager {
         self.bots.read().await.len()
     }
 
+    /// Get a bot player by username
+    ///
+    /// # Arguments
+    ///
+    /// * `username` - Bot username (e.g., "PokerPro_1")
+    ///
+    /// # Returns
+    ///
+    /// * `Option<BotPlayer>` - Bot player if found
+    pub async fn get_bot_by_username(&self, username: &str) -> Option<BotPlayer> {
+        let bots = self.bots.read().await;
+        bots.values().find(|bot| bot.config.name == username).cloned()
+    }
+
     /// Update bot statistics
     ///
     /// # Arguments
@@ -272,9 +286,9 @@ impl BotManager {
         ];
 
         use rand::Rng;
-        let mut rng = rand::thread_rng();
-        let prefix_idx = rng.gen_range(0..prefixes.len());
-        let suffix_idx = rng.gen_range(0..suffixes.len());
+        let mut rng = rand::rng();
+        let prefix_idx = rng.random_range(0..prefixes.len());
+        let suffix_idx = rng.random_range(0..suffixes.len());
 
         format!(
             "{}{}_{}",

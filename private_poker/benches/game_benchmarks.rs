@@ -1,4 +1,4 @@
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use private_poker::{
     GameSettings, PokerState,
     entities::{Card, Suit, Username},
@@ -41,8 +41,7 @@ fn bench_hand_eval_2_cards(c: &mut Criterion) {
 
     c.bench_function("hand_eval_2_cards", |b| {
         b.iter(|| {
-            let hand = eval(black_box(&cards));
-            black_box(hand);
+            eval(&cards)
         });
     });
 }
@@ -61,8 +60,7 @@ fn bench_hand_eval_7_cards(c: &mut Criterion) {
 
     c.bench_function("hand_eval_7_cards", |b| {
         b.iter(|| {
-            let hand = eval(black_box(&cards));
-            black_box(hand);
+            eval(&cards)
         });
     });
 }
@@ -87,10 +85,7 @@ fn bench_hand_eval_100_iterations(c: &mut Criterion) {
 
     c.bench_function("hand_eval_100_iterations", |b| {
         b.iter(|| {
-            for cards in &all_hands {
-                let hand = eval(black_box(cards));
-                black_box(hand);
-            }
+            all_hands.iter().map(|cards| eval(cards)).collect::<Vec<_>>()
         });
     });
 }
@@ -127,8 +122,7 @@ fn bench_hand_comparison(c: &mut Criterion) {
 
     c.bench_function("hand_comparison_4_hands", |b| {
         b.iter(|| {
-            let winners = argmax(black_box(&hands));
-            black_box(winners);
+            argmax(&hands)
         });
     });
 }
@@ -144,8 +138,7 @@ fn bench_view_generation(c: &mut Criterion) {
             |b, &n| {
                 let game = setup_game_with_players(n);
                 b.iter(|| {
-                    let views = game.get_views();
-                    black_box(views);
+                    game.get_views()
                 });
             },
         );
@@ -167,8 +160,7 @@ fn bench_game_step(c: &mut Criterion) {
                     || setup_game_with_players(n),
                     |game| {
                         // Take one step in the game (consumes game, returns new game)
-                        let new_game = game.step();
-                        black_box(new_game)
+                        game.step()
                     },
                     criterion::BatchSize::SmallInput,
                 );
@@ -185,8 +177,7 @@ fn bench_drain_events(c: &mut Criterion) {
         b.iter_batched(
             || setup_game_with_players(5),
             |mut g| {
-                let events = g.drain_events();
-                black_box(events);
+                g.drain_events();
                 g
             },
             criterion::BatchSize::SmallInput,

@@ -450,7 +450,7 @@ pub enum ServerMessage {
     },
     /// Registered for tournament
     TournamentRegistered { tournament_id: i64 },
-    /// Unregistered from tournament
+    /// Unregistered for tournament
     TournamentUnregistered { tournament_id: i64 },
     /// Tournament started
     TournamentStarted { tournament_id: i64 },
@@ -660,6 +660,19 @@ mod tests {
     use super::*;
     use crate::game::entities::{Action, Vote};
 
+    use bincode::config;
+    use bincode::serde::{decode_from_slice, encode_to_vec};
+    use serde::{de::DeserializeOwned, Serialize};
+
+    // Helper functions to use bincode 2 + serde consistently
+    fn serialize_value<T: Serialize>(value: &T) -> Vec<u8> {
+        encode_to_vec(value, config::standard()).unwrap()
+    }
+
+    fn deserialize_value<T: DeserializeOwned>(bytes: &[u8]) -> T {
+        decode_from_slice(bytes, config::standard()).unwrap().0
+    }
+
     // === ClientError Tests ===
 
     #[test]
@@ -698,8 +711,8 @@ mod tests {
     #[test]
     fn test_client_error_serialization() {
         let error = ClientError::AlreadyAssociated;
-        let serialized = bincode::serialize(&error).unwrap();
-        let deserialized: ClientError = bincode::deserialize(&serialized).unwrap();
+        let serialized = serialize_value(&error);
+        let deserialized: ClientError = deserialize_value(&serialized);
         assert_eq!(error, deserialized);
     }
 
@@ -733,8 +746,8 @@ mod tests {
     #[test]
     fn test_user_state_serialization() {
         let state = UserState::Spectate;
-        let serialized = bincode::serialize(&state).unwrap();
-        let deserialized: UserState = bincode::deserialize(&serialized).unwrap();
+        let serialized = serialize_value(&state);
+        let deserialized: UserState = deserialize_value(&serialized);
         assert_eq!(state, deserialized);
     }
 
@@ -823,16 +836,16 @@ mod tests {
     #[test]
     fn test_user_command_serialization_connect() {
         let cmd = UserCommand::Connect;
-        let serialized = bincode::serialize(&cmd).unwrap();
-        let deserialized: UserCommand = bincode::deserialize(&serialized).unwrap();
+        let serialized = serialize_value(&cmd);
+        let deserialized: UserCommand = deserialize_value(&serialized);
         assert_eq!(cmd, deserialized);
     }
 
     #[test]
     fn test_user_command_serialization_take_action() {
         let cmd = UserCommand::TakeAction(Action::Raise(Some(100)));
-        let serialized = bincode::serialize(&cmd).unwrap();
-        let deserialized: UserCommand = bincode::deserialize(&serialized).unwrap();
+        let serialized = serialize_value(&cmd);
+        let deserialized: UserCommand = deserialize_value(&serialized);
         assert_eq!(cmd, deserialized);
     }
 
@@ -878,8 +891,8 @@ mod tests {
             username: Username::new("dave"),
             command: UserCommand::TakeAction(Action::Check),
         };
-        let serialized = bincode::serialize(&msg).unwrap();
-        let deserialized: ClientMessage = bincode::deserialize(&serialized).unwrap();
+        let serialized = serialize_value(&msg);
+        let deserialized: ClientMessage = deserialize_value(&serialized);
         assert_eq!(msg.username, deserialized.username);
         assert_eq!(msg.command, deserialized.command);
     }
@@ -923,7 +936,7 @@ mod tests {
     #[test]
     fn test_server_message_user_error() {
         let server_msg = ServerMessage::UserError(UserError::NotEnoughPlayers);
-        assert!(format!("{}", server_msg).len() > 0);
+        assert!(!format!("{}", server_msg).is_empty());
     }
 
     #[test]
@@ -933,27 +946,27 @@ mod tests {
             command: UserCommand::Connect,
         };
         let server_msg = ServerMessage::Ack(client_msg);
-        let serialized = bincode::serialize(&server_msg).unwrap();
-        let _deserialized: ServerMessage = bincode::deserialize(&serialized).unwrap();
+        let serialized = serialize_value(&server_msg);
+        let _deserialized: ServerMessage = deserialize_value(&serialized);
     }
 
     #[test]
     fn test_server_message_serialization_client_error() {
         let server_msg = ServerMessage::ClientError(ClientError::Expired);
-        let serialized = bincode::serialize(&server_msg).unwrap();
-        let _deserialized: ServerMessage = bincode::deserialize(&serialized).unwrap();
+        let serialized = serialize_value(&server_msg);
+        let _deserialized: ServerMessage = deserialize_value(&serialized);
     }
 
     #[test]
     fn test_server_message_serialization_status() {
         let server_msg = ServerMessage::Status("test status".to_string());
-        let serialized = bincode::serialize(&server_msg).unwrap();
-        let _deserialized: ServerMessage = bincode::deserialize(&serialized).unwrap();
+        let serialized = serialize_value(&server_msg);
+        let _deserialized: ServerMessage = deserialize_value(&serialized);
     }
 
     #[test]
     fn test_all_client_errors_unique() {
-        let errors = vec![
+        let errors = [
             ClientError::AlreadyAssociated,
             ClientError::DoesNotExist,
             ClientError::Expired,
@@ -969,7 +982,7 @@ mod tests {
 
     #[test]
     fn test_user_command_variants() {
-        let commands = vec![
+        let commands = [
             UserCommand::Connect,
             UserCommand::Disconnect,
             UserCommand::ShowHand,
@@ -997,8 +1010,8 @@ mod tests {
             command: UserCommand::TakeAction(Action::Raise(Some(500))),
         };
 
-        let serialized = bincode::serialize(&msg).unwrap();
-        let deserialized: ClientMessage = bincode::deserialize(&serialized).unwrap();
+        let serialized = serialize_value(&msg);
+        let deserialized: ClientMessage = deserialize_value(&serialized);
 
         assert_eq!(msg.username, deserialized.username);
         assert_eq!(msg.command, deserialized.command);
@@ -1025,8 +1038,8 @@ mod tests {
                 username: Username::new("test"),
                 command: command.clone(),
             };
-            let serialized = bincode::serialize(&msg).unwrap();
-            let deserialized: ClientMessage = bincode::deserialize(&serialized).unwrap();
+            let serialized = serialize_value(&msg);
+            let deserialized: ClientMessage = deserialize_value(&serialized);
             assert_eq!(msg.username, deserialized.username);
             assert_eq!(msg.command, deserialized.command);
         }
@@ -1037,8 +1050,8 @@ mod tests {
         let errors = vec![ClientError::AlreadyAssociated];
 
         for error in errors {
-            let serialized = bincode::serialize(&error).unwrap();
-            let deserialized: ClientError = bincode::deserialize(&serialized).unwrap();
+            let serialized = serialize_value(&error);
+            let deserialized: ClientError = deserialize_value(&serialized);
             assert_eq!(error, deserialized);
         }
     }
@@ -1058,8 +1071,8 @@ mod tests {
 
         for name in usernames {
             let username = Username::new(name);
-            let serialized = bincode::serialize(&username).unwrap();
-            let deserialized: Username = bincode::deserialize(&serialized).unwrap();
+            let serialized = serialize_value(&username);
+            let deserialized: Username = deserialize_value(&serialized);
             assert_eq!(username, deserialized);
         }
     }
@@ -1077,9 +1090,9 @@ mod tests {
         ];
 
         for action in actions {
-            let ser1 = bincode::serialize(&action).unwrap();
-            let deser: Action = bincode::deserialize(&ser1).unwrap();
-            let ser2 = bincode::serialize(&deser).unwrap();
+            let ser1 = serialize_value(&action);
+            let deser: Action = deserialize_value(&ser1);
+            let ser2 = serialize_value(&deser);
             assert_eq!(ser1, ser2, "Serialization should be bijective");
         }
     }
@@ -1093,8 +1106,8 @@ mod tests {
         ];
 
         for vote in votes {
-            let ser1 = bincode::serialize(&vote).unwrap();
-            let ser2 = bincode::serialize(&vote).unwrap();
+            let ser1 = serialize_value(&vote);
+            let ser2 = serialize_value(&vote);
             assert_eq!(ser1, ser2, "Same vote should serialize identically");
         }
     }
