@@ -80,6 +80,11 @@ impl ApiClient {
             .await
             .context("Failed to send register request")?;
 
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("Registration failed: {}", error_text);
+        }
+
         let auth_response: AuthResponse = response
             .json()
             .await
