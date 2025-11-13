@@ -5,13 +5,17 @@
 
 use private_poker::auth::{AuthManager, RegisterRequest};
 use private_poker::db::{Database, DatabaseConfig};
-use private_poker::wallet::{WalletManager};
+use private_poker::wallet::WalletManager;
 use sqlx::PgPool;
 use std::sync::Arc;
 
 /// Generate unique idempotency key
 fn unique_key(prefix: &str) -> String {
-    format!("{}_{}", prefix, chrono::Utc::now().timestamp_nanos_opt().unwrap())
+    format!(
+        "{}_{}",
+        prefix,
+        chrono::Utc::now().timestamp_nanos_opt().unwrap()
+    )
 }
 
 /// Helper to create a test database pool
@@ -111,14 +115,24 @@ async fn test_claim_faucet() {
 
     // Claim faucet
     let result = wallet_mgr.claim_faucet(user.id).await;
-    assert!(result.is_ok(), "Faucet claim should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Faucet claim should succeed: {:?}",
+        result.err()
+    );
 
     let claim = result.unwrap();
     assert!(claim.amount > 0, "Faucet amount should be positive");
 
     // Check balance increased
-    let wallet = wallet_mgr.get_wallet(user.id).await.expect("Should get wallet");
-    assert!(wallet.balance >= claim.amount, "Balance should include faucet amount");
+    let wallet = wallet_mgr
+        .get_wallet(user.id)
+        .await
+        .expect("Should get wallet");
+    assert!(
+        wallet.balance >= claim.amount,
+        "Balance should include faucet amount"
+    );
 
     cleanup_user(&pool, username).await;
 }
@@ -148,7 +162,10 @@ async fn test_faucet_cooldown() {
 
     // Second claim immediately should fail
     let result = wallet_mgr.claim_faucet(user.id).await;
-    assert!(result.is_err(), "Second faucet claim should fail due to cooldown");
+    assert!(
+        result.is_err(),
+        "Second faucet claim should fail due to cooldown"
+    );
 
     cleanup_user(&pool, username).await;
 }
@@ -172,9 +189,15 @@ async fn test_transfer_to_escrow() {
         .await
         .expect("Registration should succeed");
 
-    wallet_mgr.claim_faucet(user.id).await.expect("Faucet claim should succeed");
+    wallet_mgr
+        .claim_faucet(user.id)
+        .await
+        .expect("Faucet claim should succeed");
 
-    let initial_wallet = wallet_mgr.get_wallet(user.id).await.expect("Should get wallet");
+    let initial_wallet = wallet_mgr
+        .get_wallet(user.id)
+        .await
+        .expect("Should get wallet");
 
     // Create table escrow
     sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0)")
@@ -191,10 +214,17 @@ async fn test_transfer_to_escrow() {
         .transfer_to_escrow(user.id, table_id, transfer_amount, idempotency_key)
         .await;
 
-    assert!(result.is_ok(), "Transfer to escrow should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Transfer to escrow should succeed: {:?}",
+        result.err()
+    );
 
     // Check wallet balance decreased
-    let updated_wallet = wallet_mgr.get_wallet(user.id).await.expect("Should get wallet");
+    let updated_wallet = wallet_mgr
+        .get_wallet(user.id)
+        .await
+        .expect("Should get wallet");
     assert_eq!(
         updated_wallet.balance,
         initial_wallet.balance - transfer_amount,
@@ -202,7 +232,10 @@ async fn test_transfer_to_escrow() {
     );
 
     // Check escrow balance increased
-    let escrow = wallet_mgr.get_escrow(table_id).await.expect("Should get escrow");
+    let escrow = wallet_mgr
+        .get_escrow(table_id)
+        .await
+        .expect("Should get escrow");
     assert_eq!(
         escrow.balance, transfer_amount,
         "Escrow balance should equal transfer amount"
@@ -231,7 +264,10 @@ async fn test_transfer_from_escrow() {
         .await
         .expect("Registration should succeed");
 
-    wallet_mgr.claim_faucet(user.id).await.expect("Faucet claim should succeed");
+    wallet_mgr
+        .claim_faucet(user.id)
+        .await
+        .expect("Faucet claim should succeed");
 
     // Create table escrow
     sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0)")
@@ -243,11 +279,19 @@ async fn test_transfer_from_escrow() {
     // Transfer TO escrow first
     let initial_transfer = 500;
     wallet_mgr
-        .transfer_to_escrow(user.id, table_id, initial_transfer, unique_key("test_setup"))
+        .transfer_to_escrow(
+            user.id,
+            table_id,
+            initial_transfer,
+            unique_key("test_setup"),
+        )
         .await
         .expect("Setup transfer should succeed");
 
-    let wallet_before = wallet_mgr.get_wallet(user.id).await.expect("Should get wallet");
+    let wallet_before = wallet_mgr
+        .get_wallet(user.id)
+        .await
+        .expect("Should get wallet");
 
     // Transfer FROM escrow (won some chips at table)
     // Can only return what's in escrow or less
@@ -256,10 +300,17 @@ async fn test_transfer_from_escrow() {
         .transfer_from_escrow(user.id, table_id, return_amount, unique_key("test_return"))
         .await;
 
-    assert!(result.is_ok(), "Transfer from escrow should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Transfer from escrow should succeed: {:?}",
+        result.err()
+    );
 
     // Check wallet balance increased
-    let wallet_after = wallet_mgr.get_wallet(user.id).await.expect("Should get wallet");
+    let wallet_after = wallet_mgr
+        .get_wallet(user.id)
+        .await
+        .expect("Should get wallet");
     assert_eq!(
         wallet_after.balance,
         wallet_before.balance + return_amount,
@@ -289,7 +340,10 @@ async fn test_escrow_idempotency() {
         .await
         .expect("Registration should succeed");
 
-    wallet_mgr.claim_faucet(user.id).await.expect("Faucet claim should succeed");
+    wallet_mgr
+        .claim_faucet(user.id)
+        .await
+        .expect("Faucet claim should succeed");
 
     // Create table escrow
     sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0)")
@@ -303,9 +357,16 @@ async fn test_escrow_idempotency() {
     let result1 = wallet_mgr
         .transfer_to_escrow(user.id, table_id, 500, idempotency_key.clone())
         .await;
-    assert!(result1.is_ok(), "First transfer should succeed: {:?}", result1.err());
+    assert!(
+        result1.is_ok(),
+        "First transfer should succeed: {:?}",
+        result1.err()
+    );
 
-    let wallet_after_first = wallet_mgr.get_wallet(user.id).await.expect("Should get wallet");
+    let wallet_after_first = wallet_mgr
+        .get_wallet(user.id)
+        .await
+        .expect("Should get wallet");
 
     // Second transfer with same idempotency key should be idempotent (no-op or error)
     let result2 = wallet_mgr
@@ -313,7 +374,10 @@ async fn test_escrow_idempotency() {
         .await;
 
     // Either should error or wallet shouldn't change
-    let wallet_after_second = wallet_mgr.get_wallet(user.id).await.expect("Should get wallet");
+    let wallet_after_second = wallet_mgr
+        .get_wallet(user.id)
+        .await
+        .expect("Should get wallet");
     if result2.is_ok() {
         assert_eq!(
             wallet_after_first.balance, wallet_after_second.balance,
@@ -351,14 +415,25 @@ async fn test_insufficient_funds() {
         .await
         .expect("Should create table escrow");
 
-    let wallet = wallet_mgr.get_wallet(user.id).await.expect("Should get wallet");
+    let wallet = wallet_mgr
+        .get_wallet(user.id)
+        .await
+        .expect("Should get wallet");
 
     // Try to transfer more than balance
     let result = wallet_mgr
-        .transfer_to_escrow(user.id, table_id, wallet.balance + 1000, unique_key("test_overspend"))
+        .transfer_to_escrow(
+            user.id,
+            table_id,
+            wallet.balance + 1000,
+            unique_key("test_overspend"),
+        )
         .await;
 
-    assert!(result.is_err(), "Transfer should fail with insufficient funds");
+    assert!(
+        result.is_err(),
+        "Transfer should fail with insufficient funds"
+    );
 
     cleanup_table_escrow(&pool, table_id).await;
     cleanup_user(&pool, username).await;
@@ -383,7 +458,10 @@ async fn test_get_transaction_history() {
         .await
         .expect("Registration should succeed");
 
-    wallet_mgr.claim_faucet(user.id).await.expect("Faucet claim should succeed");
+    wallet_mgr
+        .claim_faucet(user.id)
+        .await
+        .expect("Faucet claim should succeed");
 
     // Create table escrow
     sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0)")

@@ -129,10 +129,7 @@ impl WebSocketClient {
 }
 
 /// Parse user input and send command to server
-async fn parse_and_send_command<W>(
-    input: &str,
-    write: &mut W,
-) -> Result<()>
+async fn parse_and_send_command<W>(input: &str, write: &mut W) -> Result<()>
 where
     W: SinkExt<Message> + Unpin,
     W::Error: std::error::Error + Send + Sync + 'static,
@@ -190,7 +187,10 @@ where
         }
 
         _ => {
-            eprintln!("Unknown command: '{}'. Type 'help' for available commands.", parts[0]);
+            eprintln!(
+                "Unknown command: '{}'. Type 'help' for available commands.",
+                parts[0]
+            );
             return Ok(());
         }
     };
@@ -267,7 +267,8 @@ fn display_game_view(view: &GameView) {
                 "??".to_string()
             };
 
-            println!("  {}. {}{} - ${} - {:?}",
+            println!(
+                "  {}. {}{} - ${} - {:?}",
                 i + 1,
                 player.user.name,
                 position_str,

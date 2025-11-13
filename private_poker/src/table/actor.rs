@@ -6,7 +6,11 @@ use super::{
 };
 use crate::{
     bot::BotManager,
-    game::{PokerState, entities::{Username, Action, GameView}, GameStateManagement, PhaseIndependentUserManagement, PhaseDependentUserManagement},
+    game::{
+        GameStateManagement, PhaseDependentUserManagement, PhaseIndependentUserManagement,
+        PokerState,
+        entities::{Action, GameView, Username},
+    },
     wallet::{TableId, WalletManager},
 };
 use sqlx::PgPool;
@@ -360,13 +364,15 @@ impl TableActor {
                     }
                     Err(e) => {
                         // Rollback the transfer
-                        let rollback_key = format!("rollback_join_{}_{}", user_id, chrono::Utc::now().timestamp());
-                        let _ = self.wallet_manager.transfer_from_escrow(
+                        let rollback_key = format!(
+                            "rollback_join_{}_{}",
                             user_id,
-                            self.id,
-                            buy_in_amount,
-                            rollback_key,
-                        ).await;
+                            chrono::Utc::now().timestamp()
+                        );
+                        let _ = self
+                            .wallet_manager
+                            .transfer_from_escrow(user_id, self.id, buy_in_amount, rollback_key)
+                            .await;
 
                         TableResponse::Error(format!("Failed to join game: {:?}", e))
                     }
@@ -393,7 +399,8 @@ impl TableActor {
         let chip_count = match user_view {
             Some(view) => {
                 // Find the player in the view
-                view.players.iter()
+                view.players
+                    .iter()
                     .find(|p| p.user.name == username)
                     .map(|p| p.user.money as i64)
                     .unwrap_or(0)
@@ -405,7 +412,8 @@ impl TableActor {
         match self.state.remove_user(&username) {
             Ok(_) => {
                 // Transfer chips back from escrow
-                let idempotency_key = format!("leave_{}_{}", user_id, chrono::Utc::now().timestamp());
+                let idempotency_key =
+                    format!("leave_{}_{}", user_id, chrono::Utc::now().timestamp());
                 match self
                     .wallet_manager
                     .transfer_from_escrow(user_id, self.id, chip_count, idempotency_key)
@@ -420,7 +428,12 @@ impl TableActor {
                         let human_count = self.user_mapping.len();
                         let _ = self.bot_manager.adjust_bot_count(human_count).await;
 
-                        log::info!("User {} left table {} with {} chips", user_id, self.id, chip_count);
+                        log::info!(
+                            "User {} left table {} with {} chips",
+                            user_id,
+                            self.id,
+                            chip_count
+                        );
                         TableResponse::Success
                     }
                     Err(e) => TableResponse::Error(format!("Transfer failed: {}", e)),
@@ -431,11 +444,7 @@ impl TableActor {
     }
 
     /// Handle player action
-    async fn handle_action(
-        &mut self,
-        user_id: i64,
-        action: Action,
-    ) -> TableResponse {
+    async fn handle_action(&mut self, user_id: i64, action: Action) -> TableResponse {
         // Get username from mapping
         let username = match self.user_mapping.get(&user_id) {
             Some(u) => u.clone(),
@@ -479,14 +488,30 @@ impl TableActor {
             && let Some(view) = views.get(username)
         {
             pot_size = view.pot.size as i64;
-            phase = if player_count > 0 { "Playing".to_string() } else { "Lobby".to_string() };
-            players = view.players.iter().map(|p| p.user.name.to_string()).collect();
+            phase = if player_count > 0 {
+                "Playing".to_string()
+            } else {
+                "Lobby".to_string()
+            };
+            players = view
+                .players
+                .iter()
+                .map(|p| p.user.name.to_string())
+                .collect();
             waitlist_count = view.waitlist.len();
             spectator_count = view.spectators.len();
         } else if let Some((_, view)) = views.iter().next() {
             pot_size = view.pot.size as i64;
-            phase = if player_count > 0 { "Playing".to_string() } else { "Lobby".to_string() };
-            players = view.players.iter().map(|p| p.user.name.to_string()).collect();
+            phase = if player_count > 0 {
+                "Playing".to_string()
+            } else {
+                "Lobby".to_string()
+            };
+            players = view
+                .players
+                .iter()
+                .map(|p| p.user.name.to_string())
+                .collect();
             waitlist_count = view.waitlist.len();
             spectator_count = view.spectators.len();
         }
@@ -660,13 +685,18 @@ impl TableActor {
             // Check if this username is a bot (not in username_mapping means it's a bot)
             if !self.username_mapping.contains_key(&next_username) {
                 // Look up bot player to get difficulty parameters
-                if let Some(bot_player) = self.bot_manager.get_bot_by_username(next_username.as_str()).await {
+                if let Some(bot_player) = self
+                    .bot_manager
+                    .get_bot_by_username(next_username.as_str())
+                    .await
+                {
                     // Get action choices and game view
                     if let Some(action_choices) = self.state.get_action_choices() {
                         let views = self.state.get_views();
                         if let Some(bot_view) = views.get(&next_username) {
                             // Get bot's player view
-                            let bot_player_view = bot_view.players
+                            let bot_player_view = bot_view
+                                .players
                                 .iter()
                                 .find(|p| p.user.name == next_username);
 
@@ -677,7 +707,8 @@ impl TableActor {
                                 let bot_chips = player_view.user.money;
 
                                 // Get current bet amount from the pot
-                                let current_bet = bot_view.players
+                                let current_bet = bot_view
+                                    .players
                                     .iter()
                                     .map(|p| p.user.money) // This is simplified - ideally we'd track bets
                                     .max()
@@ -689,15 +720,18 @@ impl TableActor {
 
                                 // Get position and player count from game views
                                 let views = self.state.get_views();
-                                let (position, players_in_hand) = if let Some((_, view)) = views.iter().next() {
-                                    // Find bot's position among active players
-                                    let bot_position = view.players.iter()
-                                        .position(|p| p.user.name == next_username);
-                                    let active_count = view.players.len();
-                                    (bot_position, active_count)
-                                } else {
-                                    (None, 2) // Default to heads-up if no view
-                                };
+                                let (position, players_in_hand) =
+                                    if let Some((_, view)) = views.iter().next() {
+                                        // Find bot's position among active players
+                                        let bot_position = view
+                                            .players
+                                            .iter()
+                                            .position(|p| p.user.name == next_username);
+                                        let active_count = view.players.len();
+                                        (bot_position, active_count)
+                                    } else {
+                                        (None, 2) // Default to heads-up if no view
+                                    };
 
                                 let action = decision_maker.decide_action(
                                     &bot_player,
@@ -711,22 +745,30 @@ impl TableActor {
                                     players_in_hand,
                                 );
 
-                                log::debug!("Bot {} ({:?}) at position {:?} taking action: {:?}",
-                                    next_username, bot_player.config.difficulty, position, action);
+                                log::debug!(
+                                    "Bot {} ({:?}) at position {:?} taking action: {:?}",
+                                    next_username,
+                                    bot_player.config.difficulty,
+                                    position,
+                                    action
+                                );
                                 let _ = self.state.take_action(&next_username, action);
                             } else {
                                 // Fallback: check or fold
-                                self.take_fallback_action(&next_username, &action_choices).await;
+                                self.take_fallback_action(&next_username, &action_choices)
+                                    .await;
                             }
                         } else {
                             // Fallback: check or fold
-                            self.take_fallback_action(&next_username, &action_choices).await;
+                            self.take_fallback_action(&next_username, &action_choices)
+                                .await;
                         }
                     }
                 } else {
                     // Bot not found in manager, use simple fallback
                     if let Some(action_choices) = self.state.get_action_choices() {
-                        self.take_fallback_action(&next_username, &action_choices).await;
+                        self.take_fallback_action(&next_username, &action_choices)
+                            .await;
                     }
                 }
             }
@@ -734,7 +776,11 @@ impl TableActor {
     }
 
     /// Take fallback action (check if possible, otherwise fold)
-    async fn take_fallback_action(&mut self, username: &crate::entities::Username, action_choices: &crate::entities::ActionChoices) {
+    async fn take_fallback_action(
+        &mut self,
+        username: &crate::entities::Username,
+        action_choices: &crate::entities::ActionChoices,
+    ) {
         let action = if action_choices.contains(&Action::Check) {
             Action::Check
         } else {

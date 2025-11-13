@@ -102,10 +102,7 @@ async fn test_request_timeout_handling() {
         .unwrap();
 
     // Test that normal requests complete within timeout
-    let result = timeout(
-        Duration::from_secs(5),
-        app.oneshot(request)
-    ).await;
+    let result = timeout(Duration::from_secs(5), app.oneshot(request)).await;
 
     assert!(result.is_ok(), "Request should complete within timeout");
     assert_eq!(result.unwrap().unwrap().status(), StatusCode::OK);
@@ -128,8 +125,14 @@ async fn test_database_connection_timeout() {
     let result = Database::new(&config).await;
     let elapsed = start.elapsed();
 
-    assert!(result.is_err(), "Connection to invalid database should fail");
-    assert!(elapsed < Duration::from_secs(3), "Should timeout within configured time");
+    assert!(
+        result.is_err(),
+        "Connection to invalid database should fail"
+    );
+    assert!(
+        elapsed < Duration::from_secs(3),
+        "Should timeout within configured time"
+    );
 }
 
 // ============================================================================
@@ -213,9 +216,9 @@ async fn test_invalid_login_returns_error() {
     let response = app.oneshot(request).await.unwrap();
 
     assert!(
-        response.status() == StatusCode::UNAUTHORIZED ||
-        response.status() == StatusCode::BAD_REQUEST ||
-        response.status() == StatusCode::INTERNAL_SERVER_ERROR,
+        response.status() == StatusCode::UNAUTHORIZED
+            || response.status() == StatusCode::BAD_REQUEST
+            || response.status() == StatusCode::INTERNAL_SERVER_ERROR,
         "Invalid login should return error status"
     );
 }
@@ -270,8 +273,8 @@ async fn test_malformed_json_request() {
     let response = app.oneshot(request).await.unwrap();
 
     assert!(
-        response.status() == StatusCode::BAD_REQUEST ||
-        response.status() == StatusCode::UNPROCESSABLE_ENTITY,
+        response.status() == StatusCode::BAD_REQUEST
+            || response.status() == StatusCode::UNPROCESSABLE_ENTITY,
         "Malformed JSON should return 400 or 422"
     );
 }
@@ -298,8 +301,8 @@ async fn test_cors_headers_present() {
     // Check for CORS headers
     let headers = response.headers();
     assert!(
-        headers.contains_key("access-control-allow-origin") ||
-        headers.contains_key("Access-Control-Allow-Origin"),
+        headers.contains_key("access-control-allow-origin")
+            || headers.contains_key("Access-Control-Allow-Origin"),
         "CORS headers should be present"
     );
 }
@@ -407,7 +410,11 @@ async fn test_concurrent_registration() {
         }
     }
 
-    assert!(success_count >= 3, "Most concurrent registrations should succeed, got {}", success_count);
+    assert!(
+        success_count >= 3,
+        "Most concurrent registrations should succeed, got {}",
+        success_count
+    );
 }
 
 // ============================================================================
@@ -441,7 +448,10 @@ async fn test_rapid_requests_dont_crash_server() {
     }
 
     // All requests should complete (even if some might be rate limited)
-    assert!(completed_count >= 15, "Most rapid requests should complete without crashing");
+    assert!(
+        completed_count >= 15,
+        "Most rapid requests should complete without crashing"
+    );
 }
 
 #[tokio::test]

@@ -227,9 +227,9 @@ fn test_all_game_states_reachable() {
 fn test_hand_evaluation_with_board() {
     // Test hand evaluation with community cards
     let cards = vec![
-        Card(14, Suit::Spade),  // Ace
-        Card(13, Suit::Spade),  // King
-        Card(12, Suit::Heart),  // Queen
+        Card(14, Suit::Spade),   // Ace
+        Card(13, Suit::Spade),   // King
+        Card(12, Suit::Heart),   // Queen
         Card(11, Suit::Diamond), // Jack
         Card(10, Suit::Club),    // 10
         Card(2, Suit::Spade),    // 2
@@ -242,15 +242,9 @@ fn test_hand_evaluation_with_board() {
 
 #[test]
 fn test_multiple_hands_comparison() {
-    let hand1 = private_poker::functional::eval(&[
-        Card(14, Suit::Spade),
-        Card(14, Suit::Heart),
-    ]);
+    let hand1 = private_poker::functional::eval(&[Card(14, Suit::Spade), Card(14, Suit::Heart)]);
 
-    let hand2 = private_poker::functional::eval(&[
-        Card(2, Suit::Club),
-        Card(3, Suit::Diamond),
-    ]);
+    let hand2 = private_poker::functional::eval(&[Card(2, Suit::Club), Card(3, Suit::Diamond)]);
 
     let hands = vec![hand1, hand2];
     let winners = private_poker::functional::argmax(&hands);
@@ -363,7 +357,11 @@ fn test_event_generation_and_draining() {
 
     // Second drain should be empty (events are consumed)
     let events_second = game.drain_events();
-    assert_eq!(events_second.len(), 0, "Second drain should return empty vec");
+    assert_eq!(
+        events_second.len(),
+        0,
+        "Second drain should return empty vec"
+    );
 
     // Verify drain_events is idempotent
     for _ in 0..10 {

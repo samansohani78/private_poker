@@ -80,8 +80,9 @@ mod tests {
     #[tokio::test]
     async fn test_database_connection() {
         // Use DATABASE_URL environment variable or default test database
-        let database_url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://poker_test:test_password@localhost/poker_test".to_string());
+        let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgres://poker_test:test_password@localhost/poker_test".to_string()
+        });
 
         let config = DatabaseConfig {
             database_url,

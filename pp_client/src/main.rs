@@ -3,9 +3,9 @@
 //! The client connects to an HTTP/WebSocket poker server,
 //! authenticates, browses tables, and joins a selected table.
 
-use std::io::{self, Write};
 use anyhow::{Context, Result};
 use pico_args::Arguments;
+use std::io::{self, Write};
 
 mod api_client;
 #[allow(dead_code)]
@@ -25,7 +25,7 @@ USAGE:
   pp_client [OPTIONS]
 
 OPTIONS:
-  --server URL          Server URL  [default: http://127.0.0.1:6969]
+  --server URL          Server URL  [default: http://localhost:8080]
   --username NAME       Username for login
   --password PASS       Password for login
   --tui                 Use TUI (Terminal UI) mode [default: false]
@@ -53,7 +53,7 @@ async fn main() -> Result<()> {
     let args = Args {
         server_url: pargs
             .value_from_str("--server")
-            .unwrap_or_else(|_| "http://127.0.0.1:6969".to_string()),
+            .unwrap_or_else(|_| "http://localhost:8080".to_string()),
         username: pargs.opt_value_from_str("--username").ok().flatten(),
         password: pargs.opt_value_from_str("--password").ok().flatten(),
         use_tui: pargs.contains("--tui"),
@@ -103,7 +103,10 @@ async fn run(args: Args) -> Result<()> {
 
     // List tables
     println!("\nAvailable tables:");
-    let tables = api_client.list_tables().await.context("Failed to list tables")?;
+    let tables = api_client
+        .list_tables()
+        .await
+        .context("Failed to list tables")?;
 
     if tables.is_empty() {
         println!("No tables available!");
@@ -145,8 +148,8 @@ async fn run(args: Args) -> Result<()> {
         println!("Starting TUI mode...");
 
         // Create initial empty view
-        use std::sync::Arc;
         use std::collections::{HashSet, VecDeque};
+        use std::sync::Arc;
         let initial_view = private_poker::entities::GameView {
             blinds: Arc::new(private_poker::entities::Blinds { small: 0, big: 0 }),
             spectators: Arc::new(HashSet::new()),
@@ -162,11 +165,7 @@ async fn run(args: Args) -> Result<()> {
         let terminal = ratatui::init();
 
         // Create and run TUI app
-        let tui_app = TuiApp::new(
-            username.clone(),
-            selected_table.name.clone(),
-            initial_view,
-        );
+        let tui_app = TuiApp::new(username.clone(), selected_table.name.clone(), initial_view);
 
         let result = tui_app.run(ws_url, terminal).await;
 

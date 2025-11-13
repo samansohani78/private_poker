@@ -12,9 +12,7 @@ pub struct SeatRandomizer {
 impl SeatRandomizer {
     /// Create a new seat randomizer
     pub fn new() -> Self {
-        Self {
-            rng: rand::rng(),
-        }
+        Self { rng: rand::rng() }
     }
 
     /// Assign random seats to players

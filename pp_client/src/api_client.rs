@@ -148,12 +148,12 @@ impl ApiClient {
 
     /// Get WebSocket URL for a table
     pub fn get_websocket_url(&self, table_id: i64) -> Result<String> {
-        let token = self
-            .access_token
-            .as_ref()
-            .context("Not authenticated")?;
+        let token = self.access_token.as_ref().context("Not authenticated")?;
 
-        let ws_url = self.base_url.replace("http://", "ws://").replace("https://", "wss://");
+        let ws_url = self
+            .base_url
+            .replace("http://", "ws://")
+            .replace("https://", "wss://");
         Ok(format!("{}/ws/{}?token={}", ws_url, table_id, token))
     }
 }

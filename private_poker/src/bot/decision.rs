@@ -13,9 +13,7 @@ pub struct BotDecisionMaker {
 impl BotDecisionMaker {
     /// Create a new decision maker
     pub fn new() -> Self {
-        Self {
-            rng: rand::rng(),
-        }
+        Self { rng: rand::rng() }
     }
 
     /// Decide bot action based on difficulty and game state
@@ -76,9 +74,9 @@ impl BotDecisionMaker {
 
         // Adjust thresholds based on difficulty (VPIP determines how selective)
         let (fold_threshold, raise_threshold) = match params.vpip {
-            v if v > 0.40 => (0.08, 0.20),  // Easy: plays almost anything, raises at 0.20+
-            v if v > 0.25 => (0.12, 0.28),  // Standard: selective, raises at 0.28+
-            _ => (0.18, 0.33),              // TAG: very selective, raises at 0.33+ (high pairs)
+            v if v > 0.40 => (0.08, 0.20), // Easy: plays almost anything, raises at 0.20+
+            v if v > 0.25 => (0.12, 0.28), // Standard: selective, raises at 0.28+
+            _ => (0.18, 0.33),             // TAG: very selective, raises at 0.33+ (high pairs)
         };
 
         // Fold weak hands unless can check for free
@@ -179,7 +177,6 @@ impl BotDecisionMaker {
         self.rng.random_bool(params.cbet_frequency as f64)
     }
 
-
     /// Calculate raise amount based on pot size and difficulty
     fn calculate_raise_amount(
         &mut self,
@@ -239,7 +236,11 @@ impl BotDecisionMaker {
     /// # Returns
     ///
     /// * `f32` - Position bonus to add to hand strength (0.0 to 0.08)
-    fn calculate_position_modifier(&self, position: Option<usize>, players_remaining: usize) -> f32 {
+    fn calculate_position_modifier(
+        &self,
+        position: Option<usize>,
+        players_remaining: usize,
+    ) -> f32 {
         let pos = position.unwrap_or(players_remaining / 2); // Default to middle position
 
         // Late position (button, cutoff) gets bonus
@@ -253,11 +254,11 @@ impl BotDecisionMaker {
         let relative_pos = pos as f32 / players_remaining as f32;
 
         match relative_pos {
-            x if x < 0.2 => 0.08,   // Button, cutoff: +0.08 (can play J-9s, A-5s)
-            x if x < 0.4 => 0.04,   // Middle position: +0.04
-            x if x < 0.6 => 0.0,    // Early-middle: neutral
-            x if x < 0.8 => -0.03,  // Early position: -0.03 (fold marginal hands)
-            _ => -0.05,             // UTG (under the gun): -0.05 (very tight)
+            x if x < 0.2 => 0.08,  // Button, cutoff: +0.08 (can play J-9s, A-5s)
+            x if x < 0.4 => 0.04,  // Middle position: +0.04
+            x if x < 0.6 => 0.0,   // Early-middle: neutral
+            x if x < 0.8 => -0.03, // Early position: -0.03 (fold marginal hands)
+            _ => -0.05,            // UTG (under the gun): -0.05 (very tight)
         }
     }
 
@@ -430,7 +431,7 @@ mod tests {
                 100,
                 10,
                 1000,
-                false, // can't check
+                false,   // can't check
                 Some(5), // UTG (early position) - no bonus for weak hands
                 6,       // 6 players
             );
@@ -469,7 +470,7 @@ mod tests {
                 100,
                 10,
                 1000,
-                false, // can't check
+                false,   // can't check
                 Some(0), // Button position
                 6,       // 6 players
             );
@@ -557,7 +558,11 @@ mod tests {
 
         // Medium-strength hand: pair of 8s
         let hole_cards = vec![Card(8, Suit::Club), Card(8, Suit::Diamond)];
-        let board_cards = vec![Card(3, Suit::Heart), Card(7, Suit::Spade), Card(12, Suit::Club)];
+        let board_cards = vec![
+            Card(3, Suit::Heart),
+            Card(7, Suit::Spade),
+            Card(12, Suit::Club),
+        ];
 
         // Good pot odds (large pot, small call): should call more
         let mut calls_good_odds = 0;

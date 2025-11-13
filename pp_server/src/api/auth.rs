@@ -24,13 +24,9 @@
 //!   -d '{"username": "player1", "password": "Pass123!"}'
 //! ```
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    Json,
-};
-use serde::{Deserialize, Serialize};
+use axum::{Json, extract::State, http::StatusCode};
 use private_poker::auth::{LoginRequest, RegisterRequest};
+use serde::{Deserialize, Serialize};
 
 use super::AppState;
 
@@ -131,13 +127,17 @@ pub async fn register(
                 })),
                 Err(e) => Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse { error: e.to_string() }),
+                    Json(ErrorResponse {
+                        error: e.to_string(),
+                    }),
                 )),
             }
         }
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse { error: e.to_string() }),
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
         )),
     }
 }
@@ -200,7 +200,9 @@ pub async fn login(
         })),
         Err(e) => Err((
             StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse { error: e.to_string() }),
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
         )),
     }
 }
@@ -237,7 +239,9 @@ pub async fn logout(
         Ok(_) => Ok(StatusCode::NO_CONTENT),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
-            Json(ErrorResponse { error: e.to_string() }),
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
         )),
     }
 }
@@ -282,24 +286,30 @@ pub async fn refresh_token(
 ) -> Result<Json<AuthResponse>, (StatusCode, Json<ErrorResponse>)> {
     let device_fp = "web".to_string();
 
-    match state.auth_manager.refresh_token(old_refresh_token, device_fp).await {
-        Ok(tokens) => {
-            match state.auth_manager.verify_access_token(&tokens.access_token) {
-                Ok(claims) => Ok(Json(AuthResponse {
-                    access_token: tokens.access_token,
-                    refresh_token: tokens.refresh_token,
-                    user_id: claims.sub,
-                    username: claims.username,
-                })),
-                Err(e) => Err((
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse { error: e.to_string() }),
-                )),
-            }
-        }
+    match state
+        .auth_manager
+        .refresh_token(old_refresh_token, device_fp)
+        .await
+    {
+        Ok(tokens) => match state.auth_manager.verify_access_token(&tokens.access_token) {
+            Ok(claims) => Ok(Json(AuthResponse {
+                access_token: tokens.access_token,
+                refresh_token: tokens.refresh_token,
+                user_id: claims.sub,
+                username: claims.username,
+            })),
+            Err(e) => Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: e.to_string(),
+                }),
+            )),
+        },
         Err(e) => Err((
             StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse { error: e.to_string() }),
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
         )),
     }
 }

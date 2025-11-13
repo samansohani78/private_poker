@@ -655,7 +655,7 @@ mod tests {
 
     use bincode::config;
     use bincode::serde::{decode_from_slice, encode_to_vec};
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
 
     // Helpers to use bincode 2 + serde in tests
     fn serialize_value<T: Serialize>(value: &T) -> Vec<u8> {

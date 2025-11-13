@@ -15,7 +15,7 @@ use pico_args::Arguments;
 use private_poker::{
     auth::AuthManager,
     db::{Database, DatabaseConfig},
-    table::{TableConfig, TableManager, TableSpeed, BotDifficulty},
+    table::{BotDifficulty, TableConfig, TableManager, TableSpeed},
     wallet::WalletManager,
 };
 
@@ -61,29 +61,23 @@ async fn main() -> Result<(), Error> {
     }
 
     let args = Args {
-        bind: pargs
-            .value_from_str("--bind")
-            .unwrap_or_else(|_| {
-                std::env::var("SERVER_BIND")
-                    .unwrap_or_else(|_| "127.0.0.1:6969".to_string())
-                    .parse()
-                    .expect("Invalid SERVER_BIND address")
-            }),
-        database_url: pargs
-            .value_from_str("--db-url")
-            .unwrap_or_else(|_| {
-                std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-                    "postgres://poker_test:test_password@localhost/poker_test".to_string()
-                })
-            }),
-        num_tables: pargs
-            .value_from_str("--tables")
-            .unwrap_or_else(|_| {
-                std::env::var("MAX_TABLES")
-                    .ok()
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or(1)
-            }),
+        bind: pargs.value_from_str("--bind").unwrap_or_else(|_| {
+            std::env::var("SERVER_BIND")
+                .unwrap_or_else(|_| "127.0.0.1:6969".to_string())
+                .parse()
+                .expect("Invalid SERVER_BIND address")
+        }),
+        database_url: pargs.value_from_str("--db-url").unwrap_or_else(|_| {
+            std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+                "postgres://poker_test:test_password@localhost/poker_test".to_string()
+            })
+        }),
+        num_tables: pargs.value_from_str("--tables").unwrap_or_else(|_| {
+            std::env::var("MAX_TABLES")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1)
+        }),
     };
 
     // Catching signals for exit.
@@ -247,7 +241,10 @@ async fn main() -> Result<(), Error> {
         .await
         .map_err(|e| anyhow::anyhow!("Failed to bind to {}: {}", args.bind, e))?;
 
-    info!("Server is running at http://{}. Press Ctrl+C to stop.", args.bind);
+    info!(
+        "Server is running at http://{}. Press Ctrl+C to stop.",
+        args.bind
+    );
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())

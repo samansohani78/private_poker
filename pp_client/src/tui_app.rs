@@ -297,9 +297,7 @@ impl TuiApp {
             // Table management
             "join" => {
                 let buy_in = if parts.len() > 1 {
-                    parts[1]
-                        .parse::<i64>()
-                        .context("Invalid buy-in amount")?
+                    parts[1].parse::<i64>().context("Invalid buy-in amount")?
                 } else {
                     1000
                 };
@@ -494,9 +492,8 @@ impl TuiApp {
         let user_input = Paragraph::new(self.user_input.value.as_str())
             .style(Style::default())
             .block(
-                block::Block::bordered().title(
-                    format!(" {}@{}  ", self.username, self.table_name).light_green(),
-                ),
+                block::Block::bordered()
+                    .title(format!(" {}@{}  ", self.username, self.table_name).light_green()),
             );
         frame.render_widget(user_input, area);
         frame.set_cursor_position(Position::new(
@@ -539,11 +536,7 @@ impl TuiApp {
         let help_items = List::new(help_items)
             .direction(ListDirection::BottomToTop)
             .block(block::Block::bordered().title(" commands  "));
-        frame.render_stateful_widget(
-            help_items,
-            help_menu_area,
-            &mut self.help_handle.list_state,
-        );
+        frame.render_stateful_widget(help_items, help_menu_area, &mut self.help_handle.list_state);
 
         // Render help scrollbar
         frame.render_stateful_widget(
@@ -614,9 +607,10 @@ impl TuiApp {
         let write_handle = tokio::spawn(async move {
             while let Some(command) = rx_command.recv().await {
                 if let Ok(json) = serde_json::to_string(&command)
-                    && write.send(Message::Text(json.into())).await.is_err() {
-                        break;
-                    }
+                    && write.send(Message::Text(json.into())).await.is_err()
+                {
+                    break;
+                }
             }
         });
 
@@ -658,50 +652,51 @@ impl TuiApp {
                     kind,
                     ..
                 }) = event::read()?
-                    && kind == KeyEventKind::Press {
-                        match modifiers {
-                            KeyModifiers::CONTROL => match code {
-                                KeyCode::Home => self.log_handle.jump_to_first(),
-                                KeyCode::End => self.log_handle.jump_to_last(),
-                                _ => {}
-                            },
-                            KeyModifiers::NONE => match code {
-                                KeyCode::Enter => {
-                                    let user_input = self.user_input.submit();
-                                    self.handle_command(&user_input, &tx_command)?;
-                                }
-                                KeyCode::Char(to_insert) => self.user_input.input(to_insert),
-                                KeyCode::Backspace => self.user_input.backspace(),
-                                KeyCode::Delete => self.user_input.delete(),
-                                KeyCode::Left => self.user_input.move_left(),
-                                KeyCode::Right => self.user_input.move_right(),
-                                KeyCode::Up => {
-                                    if self.show_help_menu {
-                                        self.help_handle.move_up();
-                                    } else {
-                                        self.log_handle.move_up();
-                                    }
-                                }
-                                KeyCode::Down => {
-                                    if self.show_help_menu {
-                                        self.help_handle.move_down();
-                                    } else {
-                                        self.log_handle.move_down();
-                                    }
-                                }
-                                KeyCode::Home => self.user_input.jump_to_first(),
-                                KeyCode::End => self.user_input.jump_to_last(),
-                                KeyCode::Tab => self.show_help_menu = !self.show_help_menu,
-                                KeyCode::Esc => {
-                                    write_handle.abort();
-                                    read_handle.abort();
-                                    return Ok(());
-                                }
-                                _ => {}
-                            },
-                            _ => {}
+                && kind == KeyEventKind::Press
+            {
+                match modifiers {
+                    KeyModifiers::CONTROL => match code {
+                        KeyCode::Home => self.log_handle.jump_to_first(),
+                        KeyCode::End => self.log_handle.jump_to_last(),
+                        _ => {}
+                    },
+                    KeyModifiers::NONE => match code {
+                        KeyCode::Enter => {
+                            let user_input = self.user_input.submit();
+                            self.handle_command(&user_input, &tx_command)?;
                         }
-                    }
+                        KeyCode::Char(to_insert) => self.user_input.input(to_insert),
+                        KeyCode::Backspace => self.user_input.backspace(),
+                        KeyCode::Delete => self.user_input.delete(),
+                        KeyCode::Left => self.user_input.move_left(),
+                        KeyCode::Right => self.user_input.move_right(),
+                        KeyCode::Up => {
+                            if self.show_help_menu {
+                                self.help_handle.move_up();
+                            } else {
+                                self.log_handle.move_up();
+                            }
+                        }
+                        KeyCode::Down => {
+                            if self.show_help_menu {
+                                self.help_handle.move_down();
+                            } else {
+                                self.log_handle.move_down();
+                            }
+                        }
+                        KeyCode::Home => self.user_input.jump_to_first(),
+                        KeyCode::End => self.user_input.jump_to_last(),
+                        KeyCode::Tab => self.show_help_menu = !self.show_help_menu,
+                        KeyCode::Esc => {
+                            write_handle.abort();
+                            read_handle.abort();
+                            return Ok(());
+                        }
+                        _ => {}
+                    },
+                    _ => {}
+                }
+            }
 
             // Check for new game views
             if let Ok(new_view) = rx_view.try_recv() {
@@ -709,10 +704,11 @@ impl TuiApp {
                 // Check if it's our turn
                 if let Some(next_idx) = self.view.play_positions.next_action_idx
                     && let Some(player) = self.view.players.get(next_idx)
-                        && player.user.name == self.username {
-                            self.turn_warnings.reset();
-                            self.add_log(RecordKind::Alert, "It's your turn!".to_string());
-                        }
+                    && player.user.name == self.username
+                {
+                    self.turn_warnings.reset();
+                    self.add_log(RecordKind::Alert, "It's your turn!".to_string());
+                }
             }
 
             // Check for connection errors
@@ -728,10 +724,7 @@ impl TuiApp {
 
             // Check for turn warnings
             if let Some(warning) = self.turn_warnings.check() {
-                self.add_log(
-                    RecordKind::Alert,
-                    format!("{warning:>2} second(s) left"),
-                );
+                self.add_log(RecordKind::Alert, format!("{warning:>2} second(s) left"));
             }
         }
     }

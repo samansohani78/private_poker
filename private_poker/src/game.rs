@@ -1927,11 +1927,24 @@ impl PokerState {
     ///
     /// * `Ok(())` - Chips added successfully
     /// * `Err(UserError)` - Player not found
-    pub fn add_chips_to_player(&mut self, username: &Username, amount: Usd) -> Result<(), UserError> {
+    pub fn add_chips_to_player(
+        &mut self,
+        username: &Username,
+        amount: Usd,
+    ) -> Result<(), UserError> {
         // Helper function to add chips to a player in the game data
-        fn add_chips<T>(game: &mut Game<T>, username: &Username, amount: Usd) -> Result<(), UserError> {
+        fn add_chips<T>(
+            game: &mut Game<T>,
+            username: &Username,
+            amount: Usd,
+        ) -> Result<(), UserError> {
             // Find player and add chips
-            if let Some(player) = game.data.players.iter_mut().find(|p| &p.user.name == username) {
+            if let Some(player) = game
+                .data
+                .players
+                .iter_mut()
+                .find(|p| &p.user.name == username)
+            {
                 player.user.money += amount;
                 Ok(())
             } else {

@@ -91,12 +91,8 @@ use axum::{
     Router,
     routing::{get, post},
 };
+use private_poker::{auth::AuthManager, table::TableManager, wallet::WalletManager};
 use std::sync::Arc;
-use private_poker::{
-    table::TableManager,
-    wallet::WalletManager,
-    auth::AuthManager,
-};
 use tower_http::cors::CorsLayer;
 
 /// Application state shared across all HTTP handlers and WebSocket connections.
@@ -162,23 +158,19 @@ pub fn create_router(state: AppState) -> Router {
     Router::new()
         // Health check
         .route("/health", get(health_check))
-
         // Authentication routes
         .route("/api/auth/register", post(auth::register))
         .route("/api/auth/login", post(auth::login))
         .route("/api/auth/logout", post(auth::logout))
         .route("/api/auth/refresh", post(auth::refresh_token))
-
         // Table routes (require authentication)
         .route("/api/tables", get(tables::list_tables))
         .route("/api/tables/{table_id}", get(tables::get_table))
         .route("/api/tables/{table_id}/join", post(tables::join_table))
         .route("/api/tables/{table_id}/leave", post(tables::leave_table))
         .route("/api/tables/{table_id}/action", post(tables::take_action))
-
         // WebSocket route
         .route("/ws/{table_id}", get(websocket::websocket_handler))
-
         // CORS middleware
         .layer(CorsLayer::permissive())
         .with_state(state)

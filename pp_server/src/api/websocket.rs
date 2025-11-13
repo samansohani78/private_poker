@@ -52,16 +52,16 @@
 
 use axum::{
     extract::{
+        Path, Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Path, State, Query,
     },
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use futures_util::{StreamExt, SinkExt};
-use serde::{Deserialize, Serialize};
-use log::{info, error, warn};
+use futures_util::{SinkExt, StreamExt};
+use log::{error, info, warn};
 use private_poker::entities::Action;
+use serde::{Deserialize, Serialize};
 
 use super::AppState;
 
@@ -274,7 +274,10 @@ async fn handle_socket(socket: WebSocket, table_id: i64, user_id: i64, state: Ap
 
     // Cleanup
     send_task.abort();
-    info!("WebSocket disconnected: table={}, user={}", table_id, user_id);
+    info!(
+        "WebSocket disconnected: table={}, user={}",
+        table_id, user_id
+    );
 }
 
 /// Process a client command message and return a response.

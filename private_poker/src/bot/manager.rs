@@ -200,7 +200,9 @@ impl BotManager {
     /// * `Option<BotPlayer>` - Bot player if found
     pub async fn get_bot_by_username(&self, username: &str) -> Option<BotPlayer> {
         let bots = self.bots.read().await;
-        bots.values().find(|bot| bot.config.name == username).cloned()
+        bots.values()
+            .find(|bot| bot.config.name == username)
+            .cloned()
     }
 
     /// Update bot statistics

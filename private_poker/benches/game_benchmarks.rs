@@ -40,9 +40,7 @@ fn bench_hand_eval_2_cards(c: &mut Criterion) {
     ];
 
     c.bench_function("hand_eval_2_cards", |b| {
-        b.iter(|| {
-            eval(&cards)
-        });
+        b.iter(|| eval(&cards));
     });
 }
 
@@ -59,9 +57,7 @@ fn bench_hand_eval_7_cards(c: &mut Criterion) {
     ];
 
     c.bench_function("hand_eval_7_cards", |b| {
-        b.iter(|| {
-            eval(&cards)
-        });
+        b.iter(|| eval(&cards));
     });
 }
 
@@ -85,7 +81,10 @@ fn bench_hand_eval_100_iterations(c: &mut Criterion) {
 
     c.bench_function("hand_eval_100_iterations", |b| {
         b.iter(|| {
-            all_hands.iter().map(|cards| eval(cards)).collect::<Vec<_>>()
+            all_hands
+                .iter()
+                .map(|cards| eval(cards))
+                .collect::<Vec<_>>()
         });
     });
 }
@@ -121,9 +120,7 @@ fn bench_hand_comparison(c: &mut Criterion) {
     ];
 
     c.bench_function("hand_comparison_4_hands", |b| {
-        b.iter(|| {
-            argmax(&hands)
-        });
+        b.iter(|| argmax(&hands));
     });
 }
 
@@ -137,9 +134,7 @@ fn bench_view_generation(c: &mut Criterion) {
             n_players,
             |b, &n| {
                 let game = setup_game_with_players(n);
-                b.iter(|| {
-                    game.get_views()
-                });
+                b.iter(|| game.get_views());
             },
         );
     }

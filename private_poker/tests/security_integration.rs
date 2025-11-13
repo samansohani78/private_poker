@@ -30,7 +30,11 @@ async fn setup_test_db() -> Arc<PgPool> {
 
 /// Generate unique identifier for tests
 fn unique_id(prefix: &str) -> String {
-    format!("{}_{}", prefix, chrono::Utc::now().timestamp_nanos_opt().unwrap())
+    format!(
+        "{}_{}",
+        prefix,
+        chrono::Utc::now().timestamp_nanos_opt().unwrap()
+    )
 }
 
 // === Rate Limiter Tests ===
@@ -105,13 +109,19 @@ async fn test_rate_limit_different_endpoints() {
 
     // Login attempts (limit 5)
     for _ in 0..5 {
-        limiter.record_attempt("login", &identifier).await.expect("Should succeed");
+        limiter
+            .record_attempt("login", &identifier)
+            .await
+            .expect("Should succeed");
     }
 
     // Register attempts should have separate counter
     let result = limiter.check_rate_limit("register", &identifier).await;
     assert!(result.is_ok());
-    assert!(result.unwrap().is_allowed(), "Register should still be allowed");
+    assert!(
+        result.unwrap().is_allowed(),
+        "Register should still be allowed"
+    );
 
     // Clean up
     limiter.reset("login", &identifier).await.ok();
@@ -131,14 +141,23 @@ async fn test_rate_limit_reset() {
     }
 
     // Should be locked
-    let result = limiter.check_rate_limit("login", &identifier).await.unwrap();
+    let result = limiter
+        .check_rate_limit("login", &identifier)
+        .await
+        .unwrap();
     assert!(!result.is_allowed());
 
     // Reset
-    limiter.reset("login", &identifier).await.expect("Reset should succeed");
+    limiter
+        .reset("login", &identifier)
+        .await
+        .expect("Reset should succeed");
 
     // Should be allowed again
-    let result = limiter.check_rate_limit("login", &identifier).await.unwrap();
+    let result = limiter
+        .check_rate_limit("login", &identifier)
+        .await
+        .unwrap();
     assert!(result.is_allowed(), "Should be allowed after reset");
 
     limiter.reset("login", &identifier).await.ok();
@@ -201,7 +220,11 @@ async fn test_check_same_ip_at_table() {
 
     // Check for same IP
     let result = detector.check_same_ip_at_table(table_id, user1).await;
-    assert!(result.is_ok(), "check_same_ip_at_table failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "check_same_ip_at_table failed: {:?}",
+        result.err()
+    );
     assert!(result.unwrap(), "Should detect same IP at table");
 
     // Cleanup
@@ -230,8 +253,12 @@ async fn test_no_same_ip_detection() {
     let table_id = 600 + (timestamp % 100);
 
     // Register users with different IPs
-    detector.register_user_ip(user1, format!("10.1.1.{}", timestamp % 255)).await;
-    detector.register_user_ip(user2, format!("10.1.2.{}", timestamp % 255)).await;
+    detector
+        .register_user_ip(user1, format!("10.1.1.{}", timestamp % 255))
+        .await;
+    detector
+        .register_user_ip(user2, format!("10.1.2.{}", timestamp % 255))
+        .await;
 
     // Add both to same table
     detector.add_player_to_table(table_id, user1).await;
@@ -240,7 +267,10 @@ async fn test_no_same_ip_detection() {
     // Check for same IP
     let result = detector.check_same_ip_at_table(table_id, user1).await;
     assert!(result.is_ok());
-    assert!(!result.unwrap(), "Should not detect same IP with different IPs");
+    assert!(
+        !result.unwrap(),
+        "Should not detect same IP with different IPs"
+    );
 
     // Cleanup
     detector.remove_player_from_table(table_id, user1).await;
@@ -266,7 +296,7 @@ async fn test_add_remove_player_from_table() {
 
     // Verify player is at table
     let result: Result<bool, _> = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM table_players WHERE table_id = $1 AND user_id = $2)"
+        "SELECT EXISTS(SELECT 1 FROM table_players WHERE table_id = $1 AND user_id = $2)",
     )
     .bind(table_id)
     .bind(user_id)
@@ -282,7 +312,7 @@ async fn test_add_remove_player_from_table() {
 
     // Verify player is removed
     let result: Result<bool, _> = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM table_players WHERE table_id = $1 AND user_id = $2)"
+        "SELECT EXISTS(SELECT 1 FROM table_players WHERE table_id = $1 AND user_id = $2)",
     )
     .bind(table_id)
     .bind(user_id)
@@ -328,7 +358,10 @@ async fn test_find_random_seat_available() {
     assert!(seat.is_some(), "Should find an available seat");
 
     let seat_num = seat.unwrap();
-    assert!(!occupied.contains(&seat_num), "Should not return occupied seat");
+    assert!(
+        !occupied.contains(&seat_num),
+        "Should not return occupied seat"
+    );
     assert!(seat_num < max_seats, "Seat should be within range");
 }
 
@@ -347,13 +380,9 @@ async fn test_find_random_seat_all_occupied() {
 async fn test_shuffle_seats() {
     let mut randomizer = SeatRandomizer::new();
 
-    let current_seats = vec![
-        (1, 0),
-        (2, 2),
-        (3, 4),
-        (4, 6),
-        (5, 8),
-    ].into_iter().collect();
+    let current_seats = vec![(1, 0), (2, 2), (3, 4), (4, 6), (5, 8)]
+        .into_iter()
+        .collect();
 
     let shuffled = randomizer.shuffle_seats(&current_seats);
 
@@ -362,14 +391,21 @@ async fn test_shuffle_seats() {
 
     // Each user should have a valid seat
     for (user_id, seat) in &shuffled {
-        assert!(current_seats.contains_key(user_id), "User should be in original set");
+        assert!(
+            current_seats.contains_key(user_id),
+            "User should be in original set"
+        );
         assert!(*seat < 9, "Seat should be within range");
     }
 
     // No duplicate seats
     let seats: Vec<_> = shuffled.values().copied().collect();
     let unique_seats: std::collections::HashSet<_> = seats.iter().copied().collect();
-    assert_eq!(seats.len(), unique_seats.len(), "All seats should be unique");
+    assert_eq!(
+        seats.len(),
+        unique_seats.len(),
+        "All seats should be unique"
+    );
 }
 
 #[tokio::test]

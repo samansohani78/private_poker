@@ -22,13 +22,15 @@ async fn test_connection_refused() {
     // Try to connect to invalid port
     let mut client = ApiClient::new("http://localhost:19999".to_string());
 
-    let result = client.login("testuser".to_string(), "password".to_string()).await;
+    let result = client
+        .login("testuser".to_string(), "password".to_string())
+        .await;
 
     assert!(result.is_err(), "Should fail when server is not available");
     let error_msg = result.unwrap_err().to_string();
     assert!(
-        error_msg.contains("Failed to send login request") ||
-        error_msg.contains("Connection refused"),
+        error_msg.contains("Failed to send login request")
+            || error_msg.contains("Connection refused"),
         "Error should indicate connection failure"
     );
 }
@@ -41,8 +43,9 @@ async fn test_timeout_handling() {
     // Set a short timeout for the test
     let result = timeout(
         Duration::from_secs(3),
-        client.login("testuser".to_string(), "password".to_string())
-    ).await;
+        client.login("testuser".to_string(), "password".to_string()),
+    )
+    .await;
 
     // Should either timeout or fail with connection error
     assert!(
@@ -53,9 +56,12 @@ async fn test_timeout_handling() {
 
 #[tokio::test]
 async fn test_invalid_hostname() {
-    let mut client = ApiClient::new("http://invalid-hostname-that-does-not-exist.local".to_string());
+    let mut client =
+        ApiClient::new("http://invalid-hostname-that-does-not-exist.local".to_string());
 
-    let result = client.login("testuser".to_string(), "password".to_string()).await;
+    let result = client
+        .login("testuser".to_string(), "password".to_string())
+        .await;
 
     assert!(result.is_err(), "Should fail with invalid hostname");
 }
@@ -64,11 +70,13 @@ async fn test_invalid_hostname() {
 async fn test_malformed_url() {
     let mut client = ApiClient::new("not-a-valid-url".to_string());
 
-    let result = client.register(
-        "testuser".to_string(),
-        "password".to_string(),
-        "Test User".to_string(),
-    ).await;
+    let result = client
+        .register(
+            "testuser".to_string(),
+            "password".to_string(),
+            "Test User".to_string(),
+        )
+        .await;
 
     assert!(result.is_err(), "Should fail with malformed URL");
 }
@@ -104,11 +112,9 @@ async fn test_invalid_json_response() {
     // Connect to a server that returns non-JSON
     let mut client = ApiClient::new("http://example.com".to_string());
 
-    let result = client.register(
-        "test".to_string(),
-        "pass".to_string(),
-        "Test".to_string(),
-    ).await;
+    let result = client
+        .register("test".to_string(), "pass".to_string(), "Test".to_string())
+        .await;
 
     // Should fail to parse response
     assert!(result.is_err(), "Should fail with invalid JSON response");
@@ -195,11 +201,9 @@ async fn test_url_with_trailing_slash() {
 async fn test_url_with_path() {
     let mut client = ApiClient::new("http://localhost:3000/api".to_string());
 
-    let result = client.register(
-        "user".to_string(),
-        "pass".to_string(),
-        "User".to_string(),
-    ).await;
+    let result = client
+        .register("user".to_string(), "pass".to_string(), "User".to_string())
+        .await;
 
     // Should construct URL correctly (will fail due to no server)
     assert!(result.is_err());
@@ -226,9 +230,7 @@ async fn test_concurrent_api_calls() {
 
     for _ in 0..5 {
         let client = ApiClient::new("http://localhost:19999".to_string());
-        let handle = tokio::spawn(async move {
-            client.list_tables().await
-        });
+        let handle = tokio::spawn(async move { client.list_tables().await });
         handles.push(handle);
     }
 
@@ -241,7 +243,10 @@ async fn test_concurrent_api_calls() {
         }
     }
 
-    assert_eq!(error_count, 5, "All concurrent requests should fail without server");
+    assert_eq!(
+        error_count, 5,
+        "All concurrent requests should fail without server"
+    );
 }
 
 #[tokio::test]
@@ -283,10 +288,9 @@ async fn test_very_long_username() {
 async fn test_special_characters_in_credentials() {
     let mut client = ApiClient::new("http://localhost:3000".to_string());
 
-    let result = client.login(
-        "user@#$%".to_string(),
-        "pass!@#$%^&*()".to_string(),
-    ).await;
+    let result = client
+        .login("user@#$%".to_string(), "pass!@#$%^&*()".to_string())
+        .await;
 
     // Should handle special characters
     assert!(result.is_err());
@@ -306,7 +310,10 @@ async fn test_no_automatic_retry_on_failure() {
 
     // Should fail quickly without retries (< 5 seconds)
     assert!(result.is_err());
-    assert!(elapsed < Duration::from_secs(5), "Should not retry automatically");
+    assert!(
+        elapsed < Duration::from_secs(5),
+        "Should not retry automatically"
+    );
 }
 
 #[tokio::test]

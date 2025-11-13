@@ -41,7 +41,7 @@ mod tests {
     use super::*;
     use bincode::config;
     use bincode::serde::{decode_from_slice, encode_to_vec};
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
 
     // Small helpers to keep tests readable and consistent with bincode 2
     fn serialize_value<T: Serialize>(value: &T) -> Vec<u8> {

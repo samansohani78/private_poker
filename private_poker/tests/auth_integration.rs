@@ -77,13 +77,13 @@ async fn test_register_duplicate_username() {
 
     // First registration
     auth.register(RegisterRequest {
-            username: username.to_string(),
-            password: "Password123!".to_string(),
-            display_name: username.to_string(),
-            email: None,
-        })
-        .await
-        .expect("First registration should succeed");
+        username: username.to_string(),
+        password: "Password123!".to_string(),
+        display_name: username.to_string(),
+        email: None,
+    })
+    .await
+    .expect("First registration should succeed");
 
     // Second registration with same username
     let result = auth
@@ -137,13 +137,13 @@ async fn test_login_success() {
 
     // Register user
     auth.register(RegisterRequest {
-            username: username.to_string(),
-            password: password.to_string(),
-            display_name: username.to_string(),
-            email: None,
-        })
-        .await
-        .expect("Registration should succeed");
+        username: username.to_string(),
+        password: password.to_string(),
+        display_name: username.to_string(),
+        email: None,
+    })
+    .await
+    .expect("Registration should succeed");
 
     // Login
     let device_fp = "device123".to_string();
@@ -175,13 +175,13 @@ async fn test_login_wrong_password() {
 
     // Register user
     auth.register(RegisterRequest {
-            username: username.to_string(),
-            password: "CorrectPass123!".to_string(),
-            display_name: username.to_string(),
-            email: None,
-        })
-        .await
-        .expect("Registration should succeed");
+        username: username.to_string(),
+        password: "CorrectPass123!".to_string(),
+        display_name: username.to_string(),
+        email: None,
+    })
+    .await
+    .expect("Registration should succeed");
 
     // Login with wrong password
     let result = auth
@@ -236,13 +236,13 @@ async fn test_refresh_token_flow() {
 
     // Register and login
     auth.register(RegisterRequest {
-            username: username.to_string(),
-            password: password.to_string(),
-            display_name: username.to_string(),
-            email: None,
-        })
-        .await
-        .expect("Registration should succeed");
+        username: username.to_string(),
+        password: password.to_string(),
+        display_name: username.to_string(),
+        email: None,
+    })
+    .await
+    .expect("Registration should succeed");
 
     let device_fp = "device123".to_string();
     let (_user, tokens) = auth
@@ -285,13 +285,13 @@ async fn test_logout() {
 
     // Register and login
     auth.register(RegisterRequest {
-            username: username.to_string(),
-            password: password.to_string(),
-            display_name: username.to_string(),
-            email: None,
-        })
-        .await
-        .expect("Registration should succeed");
+        username: username.to_string(),
+        password: password.to_string(),
+        display_name: username.to_string(),
+        email: None,
+    })
+    .await
+    .expect("Registration should succeed");
 
     let device_fp = "device123".to_string();
     let (_user, tokens) = auth
@@ -375,13 +375,13 @@ async fn test_session_validation() {
 
     // Register and login
     auth.register(RegisterRequest {
-            username: username.to_string(),
-            password: password.to_string(),
-            display_name: username.to_string(),
-            email: None,
-        })
-        .await
-        .expect("Registration should succeed");
+        username: username.to_string(),
+        password: password.to_string(),
+        display_name: username.to_string(),
+        email: None,
+    })
+    .await
+    .expect("Registration should succeed");
 
     let device_fp = "device123".to_string();
     let (user, tokens) = auth
@@ -425,13 +425,13 @@ async fn test_multiple_sessions_same_user() {
 
     // Register user
     auth.register(RegisterRequest {
-            username: username.to_string(),
-            password: password.to_string(),
-            display_name: username.to_string(),
-            email: None,
-        })
-        .await
-        .expect("Registration should succeed");
+        username: username.to_string(),
+        password: password.to_string(),
+        display_name: username.to_string(),
+        email: None,
+    })
+    .await
+    .expect("Registration should succeed");
 
     // Login from device 1
     let (_user, tokens1) = auth

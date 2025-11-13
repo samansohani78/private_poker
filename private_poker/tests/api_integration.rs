@@ -2,7 +2,7 @@
 //!
 //! Tests authentication, table management, and WebSocket communication.
 
-use private_poker::auth::{AuthManager, RegisterRequest, LoginRequest};
+use private_poker::auth::{AuthManager, LoginRequest, RegisterRequest};
 use private_poker::db::{Database, DatabaseConfig};
 use private_poker::table::{TableConfig, TableManager};
 use private_poker::wallet::WalletManager;
@@ -53,21 +53,14 @@ async fn setup_auth_manager() -> (Arc<AuthManager>, Arc<PgPool>) {
 /// Clean up test tables to avoid ID conflicts
 async fn cleanup_test_tables(pool: &PgPool) {
     // Delete table escrows first due to foreign key
-    let _ = sqlx::query("DELETE FROM table_escrows")
-        .execute(pool)
-        .await;
+    let _ = sqlx::query("DELETE FROM table_escrows").execute(pool).await;
 
     // Delete all tables
-    let _ = sqlx::query("DELETE FROM tables")
-        .execute(pool)
-        .await;
+    let _ = sqlx::query("DELETE FROM tables").execute(pool).await;
 }
 
 /// Helper to create a test user and return auth tokens
-async fn create_test_user(
-    auth_manager: &AuthManager,
-    username: &str,
-) -> (i64, String, String) {
+async fn create_test_user(auth_manager: &AuthManager, username: &str) -> (i64, String, String) {
     // Register
     let register_req = RegisterRequest {
         username: username.to_string(),
@@ -188,9 +181,7 @@ async fn test_auth_invalid_credentials() {
         totp_code: None,
     };
 
-    let result = auth_manager
-        .login(login_req, "device1".to_string())
-        .await;
+    let result = auth_manager.login(login_req, "device1".to_string()).await;
 
     assert!(result.is_err(), "Login with wrong password should fail");
 }
@@ -239,8 +230,7 @@ async fn test_table_join_and_leave() {
     let (auth_manager, pool) = setup_auth_manager().await;
     cleanup_test_tables(&pool).await;
     let username = unique_username("table");
-    let (user_id, _access_token, _refresh_token) =
-        create_test_user(&auth_manager, &username).await;
+    let (user_id, _access_token, _refresh_token) = create_test_user(&auth_manager, &username).await;
 
     let wallet_manager = Arc::new(WalletManager::new(pool.clone()));
     let table_manager = Arc::new(TableManager::new(pool.clone(), wallet_manager.clone()));
@@ -267,13 +257,7 @@ async fn test_table_join_and_leave() {
 
     // Join table
     let result = table_manager
-        .join_table(
-            table_id,
-            user_id,
-            username,
-            500,
-            None,
-        )
+        .join_table(table_id, user_id, username, 500, None)
         .await;
 
     assert!(result.is_ok(), "Join table should succeed");
@@ -454,9 +438,10 @@ async fn test_concurrent_table_joins() {
     let mut handles = Vec::new();
     for (user_id, username) in user_ids {
         let tm = table_manager.clone();
-        let handle = tokio::spawn(async move {
-            tm.join_table(table_id, user_id, username, 500, None).await
-        });
+        let handle =
+            tokio::spawn(
+                async move { tm.join_table(table_id, user_id, username, 500, None).await },
+            );
         handles.push(handle);
     }
 
@@ -468,5 +453,8 @@ async fn test_concurrent_table_joins() {
         }
     }
 
-    assert!(success_count >= 2, "Multiple users should successfully join");
+    assert!(
+        success_count >= 2,
+        "Multiple users should successfully join"
+    );
 }

@@ -3,7 +3,7 @@ use std::io::{self, Read, Write};
 use bincode::config;
 use bincode::error::{DecodeError, EncodeError};
 use bincode::serde::{decode_from_slice, encode_to_vec};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 
 /// Maximum allowed message size (1MB) to prevent DoS attacks via unbounded allocation
 const MAX_MESSAGE_SIZE: usize = 1024 * 1024;
@@ -14,9 +14,7 @@ fn map_decode_error(err: DecodeError) -> io::Error {
         // If bincode itself encountered an io error, propagate it
         DecodeError::Io { inner, .. } => inner,
         // Not enough bytes to decode the value -> treat as UnexpectedEof
-        DecodeError::UnexpectedEnd { .. } => {
-            io::Error::new(io::ErrorKind::UnexpectedEof, err)
-        }
+        DecodeError::UnexpectedEnd { .. } => io::Error::new(io::ErrorKind::UnexpectedEof, err),
         // Everything else is bad data
         _ => io::Error::new(io::ErrorKind::InvalidData, err),
     }
@@ -70,8 +68,7 @@ pub fn read_prefixed<T: DeserializeOwned, R: Read>(reader: &mut R) -> io::Result
 
 pub fn write_prefixed<T: Serialize, W: Write>(writer: &mut W, value: &T) -> io::Result<()> {
     // Encode with bincode 2 + serde
-    let serialized =
-        encode_to_vec(value, config::standard()).map_err(map_encode_error)?;
+    let serialized = encode_to_vec(value, config::standard()).map_err(map_encode_error)?;
 
     // Validate message size before sending
     if serialized.len() > MAX_MESSAGE_SIZE {
@@ -255,9 +252,7 @@ mod tests {
         assert!(write_prefixed(&mut stream, &false).is_ok());
 
         assert!(read_prefixed::<bool, TcpStream>(&mut client).unwrap());
-        assert!(
-            !read_prefixed::<bool, TcpStream>(&mut client).unwrap()
-        );
+        assert!(!read_prefixed::<bool, TcpStream>(&mut client).unwrap());
     }
 
     #[test]

@@ -25,15 +25,12 @@
 //! ```
 
 use axum::{
-    extract::{Path, State, Extension},
-    http::StatusCode,
     Json,
+    extract::{Extension, Path, State},
+    http::StatusCode,
 };
+use private_poker::{game::entities::Action, table::messages::TableMessage};
 use serde::{Deserialize, Serialize};
-use private_poker::{
-    game::entities::Action,
-    table::messages::TableMessage,
-};
 
 use super::AppState;
 
@@ -182,7 +179,11 @@ pub async fn get_table(
     Extension(user_id): Extension<i64>,
     Path(table_id): Path<i64>,
 ) -> Result<Json<TableStateResponse>, (StatusCode, Json<ErrorResponse>)> {
-    match state.table_manager.get_table_state(table_id, Some(user_id)).await {
+    match state
+        .table_manager
+        .get_table_state(table_id, Some(user_id))
+        .await
+    {
         Ok(table_state) => Ok(Json(TableStateResponse {
             id: table_id,
             name: table_state.table_name,
@@ -190,10 +191,7 @@ pub async fn get_table(
             pot_size: table_state.pot_size,
             phase: table_state.phase,
         })),
-        Err(e) => Err((
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse { error: e }),
-        )),
+        Err(e) => Err((StatusCode::NOT_FOUND, Json(ErrorResponse { error: e }))),
     }
 }
 
@@ -246,14 +244,17 @@ pub async fn join_table(
 
     match state
         .table_manager
-        .join_table(table_id, user_id, username, request.buy_in_amount, request.passphrase)
+        .join_table(
+            table_id,
+            user_id,
+            username,
+            request.buy_in_amount,
+            request.passphrase,
+        )
         .await
     {
         Ok(_) => Ok(StatusCode::OK),
-        Err(e) => Err((
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse { error: e }),
-        )),
+        Err(e) => Err((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e }))),
     }
 }
 
@@ -291,10 +292,7 @@ pub async fn leave_table(
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     match state.table_manager.leave_table(table_id, user_id).await {
         Ok(_) => Ok(StatusCode::OK),
-        Err(e) => Err((
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse { error: e }),
-        )),
+        Err(e) => Err((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e }))),
     }
 }
 
@@ -359,7 +357,7 @@ pub async fn take_action(
                 Json(ErrorResponse {
                     error: "Table not found".to_string(),
                 }),
-            ))
+            ));
         }
     };
 
@@ -381,11 +379,12 @@ pub async fn take_action(
     match response_rx.await {
         Ok(response) => match response {
             private_poker::table::messages::TableResponse::Success => Ok(StatusCode::OK),
-            private_poker::table::messages::TableResponse::SuccessWithMessage(_) => Ok(StatusCode::OK),
-            private_poker::table::messages::TableResponse::Error(e) => Err((
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse { error: e }),
-            )),
+            private_poker::table::messages::TableResponse::SuccessWithMessage(_) => {
+                Ok(StatusCode::OK)
+            }
+            private_poker::table::messages::TableResponse::Error(e) => {
+                Err((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })))
+            }
             private_poker::table::messages::TableResponse::TableFull => Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
@@ -398,10 +397,9 @@ pub async fn take_action(
                     error: "Not your turn".to_string(),
                 }),
             )),
-            private_poker::table::messages::TableResponse::InvalidAction(e) => Err((
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse { error: e }),
-            )),
+            private_poker::table::messages::TableResponse::InvalidAction(e) => {
+                Err((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })))
+            }
             _ => Err((
                 StatusCode::BAD_REQUEST,
                 Json(ErrorResponse {
