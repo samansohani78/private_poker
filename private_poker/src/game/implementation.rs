@@ -9,17 +9,14 @@ use std::{
 };
 use thiserror::Error;
 
-pub mod constants;
-pub mod entities;
-pub mod functional;
-
-use constants::{DEFAULT_MAX_USERS, MAX_PLAYERS};
-use entities::{
+use super::constants::{DEFAULT_MAX_USERS, MAX_PLAYERS};
+use super::entities::{
     Action, ActionChoice, ActionChoices, Bet, BetAction, Blinds, Card, DEFAULT_BUY_IN,
     DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND, Deck, GameView, GameViews, PlayPositions,
     Player, PlayerCounts, PlayerQueues, PlayerState, PlayerView, Pot, PotView, SeatIndex, Usd,
     User, Username, Vote,
 };
+use super::functional;
 
 #[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
 pub enum UserError {
@@ -675,12 +672,10 @@ impl<T> PhaseIndependentUserManagement for Game<T> {
                 .ok_or(UserError::UserAlreadyExists);
         }
         // Check the ledger for some memory of the user's money stack.
-        // There are a couple of flaws with this. If a user runs out
-        // of money, they can leave and then rejoin under a different
-        // name to get more money, and if a user uses another user's
-        // name, then they'll take ownership of their money stack.
-        // However, both of these flaws can be avoided by running a
-        // server with some kind of user management.
+        // This local ledger is for standalone game instances. In production,
+        // the TableActor integrates with WalletManager which provides proper
+        // user authentication and wallet management, preventing issues like
+        // duplicate usernames or balance manipulation.
         let money = self
             .data
             .ledger
@@ -1551,17 +1546,28 @@ impl Game<DistributePot> {
             }
             let winner_indices = functional::argmax(&hands_in_pot);
 
-            // Finally, split the pot amongst all the winners. Pot remainder
-            // goes to the house (disappears).
+            // Split the pot amongst all the winners.
+            // Remainder chips are awarded to winner(s) in earliest position (standard poker rule).
             let num_winners = winner_indices.len();
             let pot_split = pot_size / num_winners as Usd;
-            for winner_idx in winner_indices {
-                let winner_player_idx = seats_in_pot[winner_idx];
+            let pot_remainder = pot_size % num_winners as Usd;
+
+            for (i, winner_idx) in winner_indices.iter().enumerate() {
+                let winner_player_idx = seats_in_pot[*winner_idx];
                 let player = &mut self.data.players[*winner_player_idx];
-                player.user.money += pot_split;
+
+                // Award base pot split to all winners
+                let mut award = pot_split;
+
+                // Award remainder chips to first winner(s) in position
+                if (i as Usd) < pot_remainder {
+                    award += 1;
+                }
+
+                player.user.money += award;
                 self.data
                     .events
-                    .push_back(GameEvent::SplitPot(player.user.name.clone(), pot_split));
+                    .push_back(GameEvent::SplitPot(player.user.name.clone(), award));
             }
         }
 
@@ -1782,6 +1788,41 @@ impl PokerState {
         }
     }
 
+    /// Get the amount a player needs to call to stay in the hand
+    #[must_use]
+    pub fn get_call_amount_for_player(&self, username: &Username) -> Option<Usd> {
+        match self {
+            Self::TakeAction(game) => {
+                // Find the player by username
+                let player = game.data.players.iter().find(|p| &p.user.name == username)?;
+                // Get the call amount for this player's seat
+                Some(game.data.pot.get_call_by_player_idx(player.seat_idx))
+            }
+            _ => None,
+        }
+    }
+
+    /// Check if a username is an active player (not spectator or waitlisted)
+    #[must_use]
+    pub fn contains_player(&self, username: &Username) -> bool {
+        match self {
+            Self::Lobby(game) => game.contains_player(username),
+            Self::SeatPlayers(game) => game.contains_player(username),
+            Self::MoveButton(game) => game.contains_player(username),
+            Self::CollectBlinds(game) => game.contains_player(username),
+            Self::Deal(game) => game.contains_player(username),
+            Self::TakeAction(game) => game.contains_player(username),
+            Self::Flop(game) => game.contains_player(username),
+            Self::Turn(game) => game.contains_player(username),
+            Self::River(game) => game.contains_player(username),
+            Self::ShowHands(game) => game.contains_player(username),
+            Self::DistributePot(game) => game.contains_player(username),
+            Self::RemovePlayers(game) => game.contains_player(username),
+            Self::UpdateBlinds(game) => game.contains_player(username),
+            Self::BootPlayers(game) => game.contains_player(username),
+        }
+    }
+
     pub fn init_start(&mut self, username: &Username) -> Result<(), UserError> {
         match self {
             Self::Lobby(game) => {
@@ -1980,11 +2021,11 @@ impl From<GameSettings> for PokerState {
 
 #[cfg(test)]
 mod game_tests {
+    use super::super::entities::{Action, ActionChoice, Card, PlayerState, Suit, Username};
     use super::{
         BootPlayers, CollectBlinds, Deal, DistributePot, Flop, Game, Lobby, MoveButton,
         PhaseDependentUserManagement, PhaseIndependentUserManagement, RemovePlayers, River,
         SeatPlayers, ShowHands, TakeAction, Turn, UpdateBlinds, UserError,
-        entities::{Action, ActionChoice, Card, PlayerState, Suit, Username},
     };
 
     fn init_2_player_game() -> Game<SeatPlayers> {
@@ -2771,10 +2812,10 @@ mod game_tests {
 
 #[cfg(test)]
 mod state_tests {
+    use super::super::entities::{Action, Username};
     use super::{
         GameSettings, PhaseDependentUserManagement, PhaseIndependentUserManagement, PokerState,
         UserError,
-        entities::{Action, Username},
     };
 
     fn init_state() -> PokerState {
