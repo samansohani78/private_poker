@@ -201,4 +201,119 @@ mod tests {
         log_api_request("GET", "/api/users", 200, 45, Some(123));
         log_api_request("POST", "/api/login", 401, 120, None);
     }
+
+    #[test]
+    fn test_log_security_event_no_user() {
+        log_security_event("test_event", None, Some("192.168.1.1"), "No user event");
+    }
+
+    #[test]
+    fn test_log_security_event_no_ip() {
+        log_security_event("test_event", Some(42), None, "No IP event");
+    }
+
+    #[test]
+    fn test_log_security_event_minimal() {
+        log_security_event("minimal_event", None, None, "Minimal event");
+    }
+
+    #[test]
+    fn test_log_performance_fast_operation() {
+        log_performance("fast_op", 50, None);
+        log_performance("very_fast", 1, Some("quick"));
+    }
+
+    #[test]
+    fn test_log_performance_slow_operation() {
+        log_performance("slow_op", 1001, Some("very slow"));
+        log_performance("super_slow", 5000, None);
+    }
+
+    #[test]
+    fn test_log_performance_boundary() {
+        log_performance("boundary", 1000, None); // Exactly at threshold
+        log_performance("just_over", 1001, Some("just slow"));
+    }
+
+    #[test]
+    fn test_log_database_fast_query() {
+        log_database_operation("SELECT", "users", 10);
+        log_database_operation("SELECT", "sessions", 99);
+    }
+
+    #[test]
+    fn test_log_database_slow_query() {
+        log_database_operation("SELECT", "users", 101);
+        log_database_operation("UPDATE", "wallets", 500);
+    }
+
+    #[test]
+    fn test_log_database_all_query_types() {
+        log_database_operation("SELECT", "users", 50);
+        log_database_operation("INSERT", "users", 60);
+        log_database_operation("UPDATE", "users", 70);
+        log_database_operation("DELETE", "users", 80);
+    }
+
+    #[test]
+    fn test_log_api_request_various_methods() {
+        log_api_request("GET", "/api/health", 200, 5, None);
+        log_api_request("POST", "/api/auth/register", 201, 150, None);
+        log_api_request("PUT", "/api/users/123", 200, 100, Some(123));
+        log_api_request("DELETE", "/api/sessions", 204, 50, Some(456));
+        log_api_request("PATCH", "/api/profile", 200, 75, Some(789));
+    }
+
+    #[test]
+    fn test_log_api_request_various_status_codes() {
+        log_api_request("GET", "/api/test", 200, 50, None); // OK
+        log_api_request("POST", "/api/test", 201, 50, None); // Created
+        log_api_request("GET", "/api/test", 400, 50, None); // Bad Request
+        log_api_request("GET", "/api/test", 401, 50, None); // Unauthorized
+        log_api_request("GET", "/api/test", 404, 50, None); // Not Found
+        log_api_request("POST", "/api/test", 500, 50, None); // Internal Server Error
+    }
+
+    #[test]
+    fn test_log_api_request_long_duration() {
+        log_api_request("POST", "/api/slow", 200, 5000, Some(1));
+        log_api_request("GET", "/api/timeout", 504, 30000, None);
+    }
+
+    #[test]
+    fn test_log_functions_with_special_characters() {
+        log_security_event("login/failure", Some(1), Some("127.0.0.1"), "Failed @ login");
+        log_performance("db::query", 100, Some("table: users & sessions"));
+        log_database_operation("SELECT", "table_with_underscore", 50);
+        log_api_request("GET", "/api/path/with/slashes", 200, 50, Some(1));
+    }
+
+    #[test]
+    fn test_log_functions_with_empty_strings() {
+        log_security_event("", Some(1), Some(""), "");
+        log_performance("", 0, Some(""));
+        log_database_operation("", "", 0);
+        log_api_request("", "", 0, 0, None);
+    }
+
+    #[test]
+    fn test_log_functions_with_very_long_strings() {
+        let long_string = "x".repeat(1000);
+        log_security_event(&long_string, Some(1), Some(&long_string), &long_string);
+        log_performance(&long_string, 100, Some(&long_string));
+        log_database_operation(&long_string, &long_string, 100);
+        log_api_request(&long_string, &long_string, 200, 100, Some(1));
+    }
+
+    #[test]
+    fn test_multiple_concurrent_logs() {
+        // Simulate multiple logs happening quickly
+        for i in 0..10 {
+            let i_u64 = i as u64;
+            log_security_event("concurrent", Some(i), Some("127.0.0.1"), "Concurrent event");
+            log_performance("concurrent", i_u64 * 100, None);
+            log_database_operation("SELECT", "test", i_u64 * 10);
+            log_api_request("GET", "/test", 200, i_u64 * 10, Some(i));
+        }
+    }
 }

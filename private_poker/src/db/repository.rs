@@ -269,4 +269,152 @@ pub mod mock {
             Ok(())
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[tokio::test]
+        async fn test_mock_create_user() {
+            let repo = MockUserRepository::new();
+
+            let user_id = repo.create_user("testuser", "hash123", "Test User")
+                .await
+                .expect("Failed to create user");
+
+            assert_eq!(user_id, 1, "First user should have ID 1");
+
+            // Create second user
+            let user_id2 = repo.create_user("testuser2", "hash456", "Test User 2")
+                .await
+                .expect("Failed to create second user");
+
+            assert_eq!(user_id2, 2, "Second user should have ID 2");
+        }
+
+        #[tokio::test]
+        async fn test_mock_find_by_username() {
+            let repo = MockUserRepository::new();
+
+            // User doesn't exist yet
+            let result = repo.find_by_username("testuser").await.unwrap();
+            assert!(result.is_none(), "Should not find non-existent user");
+
+            // Create user
+            repo.create_user("testuser", "hash123", "Test User").await.unwrap();
+
+            // Now should find user
+            let result = repo.find_by_username("testuser").await.unwrap();
+            assert!(result.is_some(), "Should find existing user");
+
+            let user = result.unwrap();
+            assert_eq!(user.username, "testuser");
+            assert_eq!(user.display_name, "Test User");
+            assert!(user.is_active);
+        }
+
+        #[tokio::test]
+        async fn test_mock_find_by_id() {
+            let repo = MockUserRepository::new();
+
+            // Create user
+            let user_id = repo.create_user("testuser", "hash123", "Test User").await.unwrap();
+
+            // Find by ID
+            let result = repo.find_by_id(user_id).await.unwrap();
+            assert!(result.is_some(), "Should find user by ID");
+
+            let user = result.unwrap();
+            assert_eq!(user.id, user_id);
+            assert_eq!(user.username, "testuser");
+
+            // Non-existent ID
+            let result = repo.find_by_id(999).await.unwrap();
+            assert!(result.is_none(), "Should not find non-existent ID");
+        }
+
+        #[tokio::test]
+        async fn test_mock_update_last_login() {
+            let repo = MockUserRepository::new();
+
+            let user_id = repo.create_user("testuser", "hash123", "Test User").await.unwrap();
+
+            // Should not fail
+            let result = repo.update_last_login(user_id).await;
+            assert!(result.is_ok(), "Update last login should succeed");
+
+            // Non-existent user should also succeed (mock implementation)
+            let result = repo.update_last_login(999).await;
+            assert!(result.is_ok(), "Update last login for non-existent user should succeed");
+        }
+
+        #[tokio::test]
+        async fn test_mock_deactivate_user() {
+            let repo = MockUserRepository::new();
+
+            let user_id = repo.create_user("testuser", "hash123", "Test User").await.unwrap();
+
+            // Verify user is active
+            let user = repo.find_by_id(user_id).await.unwrap().unwrap();
+            assert!(user.is_active, "User should be active initially");
+
+            // Deactivate user
+            repo.deactivate_user(user_id).await.unwrap();
+
+            // Verify user is now inactive
+            let user = repo.find_by_id(user_id).await.unwrap().unwrap();
+            assert!(!user.is_active, "User should be inactive after deactivation");
+        }
+
+        #[tokio::test]
+        async fn test_mock_with_user() {
+            let test_user = User {
+                id: 100,
+                username: "preloaded".to_string(),
+                display_name: "Preloaded User".to_string(),
+                avatar_url: None,
+                email: Some("test@example.com".to_string()),
+                country: Some("US".to_string()),
+                timezone: Some("UTC".to_string()),
+                tos_version: 1,
+                privacy_version: 1,
+                is_active: true,
+                is_admin: true,
+                created_at: chrono::Utc::now(),
+                last_login: None,
+            };
+
+            let repo = MockUserRepository::new().with_user(test_user.clone());
+
+            // Should find preloaded user
+            let result = repo.find_by_id(100).await.unwrap();
+            assert!(result.is_some(), "Should find preloaded user");
+
+            let found_user = result.unwrap();
+            assert_eq!(found_user.id, 100);
+            assert_eq!(found_user.username, "preloaded");
+            assert_eq!(found_user.email, Some("test@example.com".to_string()));
+            assert!(found_user.is_admin);
+        }
+
+        #[tokio::test]
+        async fn test_mock_multiple_users() {
+            let repo = MockUserRepository::new();
+
+            // Create multiple users
+            for i in 1..=5 {
+                let username = format!("user{}", i);
+                let display_name = format!("User {}", i);
+                repo.create_user(&username, "hash", &display_name).await.unwrap();
+            }
+
+            // Verify all users exist
+            for i in 1..=5 {
+                let username = format!("user{}", i);
+                let user = repo.find_by_username(&username).await.unwrap();
+                assert!(user.is_some(), "Should find user{}", i);
+                assert_eq!(user.unwrap().id, i as i64);
+            }
+        }
+    }
 }
