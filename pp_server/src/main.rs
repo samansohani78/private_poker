@@ -4,13 +4,13 @@
 //! with database-backed authentication and wallet systems.
 
 mod api;
+mod logging;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use anyhow::Error;
 use ctrlc::set_handler;
-use log::info;
 use pico_args::Arguments;
 use private_poker::{
     auth::AuthManager,
@@ -84,11 +84,12 @@ async fn main() -> Result<(), Error> {
     // Catching signals for exit.
     set_handler(|| std::process::exit(0))?;
 
-    env_logger::builder().format_target(false).init();
-    info!("Starting multi-table poker server at {}", args.bind);
+    // Initialize structured logging
+    logging::init();
+    tracing::info!("Starting multi-table poker server at {}", args.bind);
 
     // Initialize database
-    info!("Connecting to database: {}", args.database_url);
+    tracing::info!("Connecting to database: {}", args.database_url);
     let db_config = DatabaseConfig {
         database_url: args.database_url,
         max_connections: std::env::var("DB_MAX_CONNECTIONS")
@@ -117,7 +118,7 @@ async fn main() -> Result<(), Error> {
         .await
         .map_err(|e| anyhow::anyhow!("Failed to connect to database: {}", e))?;
 
-    info!("Database connected successfully");
+    tracing::info!("Database connected successfully");
 
     // Create managers
     let pool = Arc::new(db.pool().clone());
@@ -134,17 +135,17 @@ async fn main() -> Result<(), Error> {
     let auth_manager = Arc::new(AuthManager::new(pool.clone(), pepper, jwt_secret));
 
     // Load existing tables from database first
-    info!("Loading existing tables from database...");
+    tracing::info!("Loading existing tables from database...");
     match table_manager.load_existing_tables().await {
         Ok(count) => {
-            info!("✓ Loaded {} existing table(s) from database", count);
+            tracing::info!("✓ Loaded {} existing table(s) from database", count);
         }
         Err(e) => {
-            log::error!("Failed to load existing tables: {}", e);
+            tracing::error!("Failed to load existing tables: {}", e);
         }
     }
 
-    info!("Creating {} new table(s)...", args.num_tables);
+    tracing::info!("Creating {} new table(s)...", args.num_tables);
 
     // Parse bot difficulty from env
     let bot_difficulty = std::env::var("DEFAULT_BOT_DIFFICULTY")
@@ -207,23 +208,23 @@ async fn main() -> Result<(), Error> {
 
         match table_manager.create_table(config, None).await {
             Ok(table_id) => {
-                info!("✓ Created table {} with ID {}", i + 1, table_id);
+                tracing::info!("✓ Created table {} with ID {}", i + 1, table_id);
             }
             Err(e) => {
-                log::error!("Failed to create table {}: {}", i + 1, e);
+                tracing::error!("Failed to create table {}: {}", i + 1, e);
             }
         }
     }
 
     let active_count = table_manager.active_table_count().await;
-    info!("Server ready with {} active table(s)", active_count);
+    tracing::info!("Server ready with {} active table(s)", active_count);
 
     // List tables
     match table_manager.list_tables().await {
         Ok(tables) => {
-            info!("Active tables:");
+            tracing::info!("Active tables:");
             for table in tables {
-                info!(
+                tracing::info!(
                     "  - {} (ID: {}) - {}/{} players, blinds: {}/{}",
                     table.name,
                     table.id,
@@ -235,7 +236,7 @@ async fn main() -> Result<(), Error> {
             }
         }
         Err(e) => {
-            log::error!("Failed to list tables: {}", e);
+            tracing::error!("Failed to list tables: {}", e);
         }
     }
 
@@ -251,12 +252,12 @@ async fn main() -> Result<(), Error> {
     let app = api::create_router(api_state);
 
     // Start HTTP server
-    info!("Starting HTTP/WebSocket server on {}", args.bind);
+    tracing::info!("Starting HTTP/WebSocket server on {}", args.bind);
     let listener = tokio::net::TcpListener::bind(args.bind)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to bind to {}: {}", args.bind, e))?;
 
-    info!(
+    tracing::info!(
         "Server is running at http://{}. Press Ctrl+C to stop.",
         args.bind
     );
@@ -266,7 +267,7 @@ async fn main() -> Result<(), Error> {
         .await
         .map_err(|e| anyhow::anyhow!("Server error: {}", e))?;
 
-    info!("Shutting down server...");
+    tracing::info!("Shutting down server...");
 
     Ok(())
 }

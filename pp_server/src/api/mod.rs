@@ -87,6 +87,7 @@
 
 pub mod auth;
 pub mod middleware;
+pub mod request_id;
 pub mod tables;
 pub mod websocket;
 
@@ -188,6 +189,7 @@ pub fn create_router(state: AppState) -> Router {
     Router::new()
         .merge(public_routes)
         .merge(protected_routes)
+        .layer(axum::middleware::from_fn(request_id::request_id_middleware))
         .layer(CorsLayer::permissive())
         .with_state(state)
 }

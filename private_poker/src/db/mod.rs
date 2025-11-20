@@ -7,8 +7,10 @@ use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::time::Duration;
 
 pub mod config;
+pub mod repository;
 
 pub use config::DatabaseConfig;
+pub use repository::{UserRepository, SessionRepository, WalletRepository, PgUserRepository};
 
 /// Database connection pool wrapper
 #[derive(Clone)]
