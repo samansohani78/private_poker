@@ -55,7 +55,7 @@ Major accomplishments:
 - ✅ Complete wallet & economy system
 - ✅ REST + WebSocket API
 - ✅ Tournament mode (Sit-n-Go)
-- ✅ Rich TUI client + CLI mode
+- ✅ Rich TUI client + CLI mode + Web client
 - ✅ PostgreSQL database with migrations
 - ✅ Comprehensive testing (501 tests)
 - ✅ 9-pass security audit (62 issues found and fixed)
@@ -89,6 +89,7 @@ private_poker/
 ├── pp_server/           # HTTP/WebSocket server
 ├── pp_client/           # TUI/CLI client
 ├── pp_bots/             # Bot implementations
+├── web_client/          # Web browser client (HTML/CSS/JS)
 └── migrations/          # Database migrations
 ```
 
@@ -215,10 +216,10 @@ private_poker/
 - jsonwebtoken (JWT)
 - totp-rs (2FA)
 
-### Client
-- ratatui (terminal UI)
-- crossterm (terminal control)
-- tokio-tungstenite (WebSocket)
+### Clients
+- **TUI/CLI**: ratatui (terminal UI), crossterm (terminal control)
+- **Web Client**: HTML5, CSS3, Vanilla JavaScript
+- **WebSocket**: tokio-tungstenite (for real-time updates)
 
 ### Database
 - PostgreSQL 14+
@@ -267,7 +268,7 @@ See **PRODUCTION_DEPLOYMENT_CHECKLIST.md** for complete deployment guide.
 - [x] Wallet & economy (double-entry ledger, escrow)
 - [x] HTTP/WebSocket API
 - [x] Tournament mode (Sit-n-Go)
-- [x] Client applications (TUI, CLI)
+- [x] Client applications (TUI, CLI, Web)
 - [x] Database layer (18 tables, migrations)
 - [x] Comprehensive testing (519 tests)
 - [x] Security audit (9 passes, A+ grade)

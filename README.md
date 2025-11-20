@@ -20,7 +20,8 @@ A production-ready, multi-table Texas Hold'em poker platform built in Rust with 
 ### Player Experience
 - 🖥️ **Rich TUI Mode**: Beautiful terminal interface with colored cards
 - 📱 **CLI Mode**: Simple command-line interface
-- 🌐 **WebSocket**: Real-time game updates
+- 🌐 **Web Client**: Browser-based UI with visual poker table (HTML/CSS/JS)
+- 🔄 **WebSocket**: Real-time game updates
 - 🤖 **Bot Opponents**: Smart AI with bluffing (Easy/Standard/TAG difficulty)
 
 ### Backend Features
