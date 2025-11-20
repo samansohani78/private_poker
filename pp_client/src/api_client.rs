@@ -8,6 +8,7 @@ pub struct ApiClient {
     base_url: String,
     client: reqwest::Client,
     access_token: Option<String>,
+    #[allow(dead_code)]
     refresh_token: Option<String>,
 }
 
@@ -81,7 +82,10 @@ impl ApiClient {
             .context("Failed to send register request")?;
 
         if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_default();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|e| format!("Failed to read error response: {}", e));
             anyhow::bail!("Registration failed: {}", error_text);
         }
 
@@ -113,7 +117,10 @@ impl ApiClient {
             .context("Failed to send login request")?;
 
         if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_default();
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|e| format!("Failed to read error response: {}", e));
             anyhow::bail!("Login failed: {}", error_text);
         }
 
@@ -149,6 +156,39 @@ impl ApiClient {
     #[allow(dead_code)]
     pub fn get_access_token(&self) -> Option<&str> {
         self.access_token.as_deref()
+    }
+
+    /// Join a table with specified buy-in amount
+    pub async fn join_table(&self, table_id: i64, buy_in: i64) -> Result<()> {
+        let token = self.access_token.as_ref().context("Not authenticated")?;
+
+        #[derive(Serialize)]
+        struct JoinRequest {
+            buy_in_amount: i64,
+        }
+
+        let request = JoinRequest {
+            buy_in_amount: buy_in,
+        };
+
+        let response = self
+            .client
+            .post(format!("{}/api/tables/{}/join", self.base_url, table_id))
+            .header("Authorization", format!("Bearer {}", token))
+            .json(&request)
+            .send()
+            .await
+            .context("Failed to send join request")?;
+
+        if !response.status().is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|e| format!("Failed to read error response: {}", e));
+            anyhow::bail!("Join table failed: {}", error_text);
+        }
+
+        Ok(())
     }
 
     /// Get WebSocket URL for a table

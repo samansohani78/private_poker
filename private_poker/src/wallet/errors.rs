@@ -42,5 +42,24 @@ pub enum WalletError {
     TransactionFailed(String),
 }
 
+impl WalletError {
+    /// Get a client-safe error message that doesn't leak sensitive information
+    ///
+    /// Database errors are sanitized to prevent information disclosure about
+    /// the internal system structure, and user IDs/table IDs are redacted.
+    pub fn client_message(&self) -> String {
+        match self {
+            // Sanitize database errors - don't expose SQL details
+            WalletError::Database(_) => "Internal server error".to_string(),
+            // Sanitize wallet not found - don't expose user IDs
+            WalletError::WalletNotFound(_) => "Wallet not found".to_string(),
+            // Sanitize escrow not found - don't expose table IDs
+            WalletError::EscrowNotFound(_) => "Escrow not found".to_string(),
+            // All other errors are safe to expose
+            _ => self.to_string(),
+        }
+    }
+}
+
 /// Result type for wallet operations
 pub type WalletResult<T> = Result<T, WalletError>;

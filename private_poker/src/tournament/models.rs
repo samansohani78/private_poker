@@ -85,19 +85,17 @@ impl PrizeStructure {
             0..=1 => vec![total_pool],
             2..=5 => vec![total_pool], // Winner takes all
             6..=9 => {
-                // 60/40 split
-                vec![
-                    (total_pool as f64 * 0.60) as i64,
-                    (total_pool as f64 * 0.40) as i64,
-                ]
+                // 60/40 split using integer arithmetic
+                let first = (total_pool * 60) / 100;
+                let second = total_pool - first; // Remainder goes to second to avoid truncation loss
+                vec![first, second]
             }
             _ => {
-                // 50/30/20 split
-                vec![
-                    (total_pool as f64 * 0.50) as i64,
-                    (total_pool as f64 * 0.30) as i64,
-                    (total_pool as f64 * 0.20) as i64,
-                ]
+                // 50/30/20 split using integer arithmetic
+                let first = (total_pool * 50) / 100;
+                let second = (total_pool * 30) / 100;
+                let third = total_pool - first - second; // Remainder goes to third
+                vec![first, second, third]
             }
         };
 
@@ -109,10 +107,18 @@ impl PrizeStructure {
 
     /// Create custom prize structure
     pub fn custom(total_pool: i64, percentages: Vec<f64>) -> Self {
-        let payouts = percentages
+        // Use integer arithmetic for precision
+        // percentages should be between 0.0 and 1.0
+        let mut payouts: Vec<i64> = percentages
             .iter()
-            .map(|pct| (total_pool as f64 * pct) as i64)
+            .map(|pct| ((total_pool as f64 * pct * 100.0) as i64) / 100)
             .collect();
+
+        // Distribute any remainder due to rounding to the first position
+        let sum: i64 = payouts.iter().sum();
+        if !payouts.is_empty() && sum < total_pool {
+            payouts[0] += total_pool - sum;
+        }
 
         Self {
             total_pool,

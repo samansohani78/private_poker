@@ -309,10 +309,11 @@ CREATE TABLE rate_limit_attempts (
     identifier VARCHAR(255) NOT NULL,  -- IP or username
     attempts INT NOT NULL DEFAULT 1,
     window_start TIMESTAMP NOT NULL DEFAULT NOW(),
-    locked_until TIMESTAMP
+    locked_until TIMESTAMP,
+
+    CONSTRAINT rate_limit_attempts_endpoint_identifier_unique UNIQUE (endpoint, identifier)
 );
 
-CREATE INDEX idx_rate_limit_endpoint_identifier ON rate_limit_attempts(endpoint, identifier);
 CREATE INDEX idx_rate_limit_window ON rate_limit_attempts(window_start);
 
 -- ======================

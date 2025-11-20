@@ -223,7 +223,7 @@ fn display_game_view(view: &GameView) {
     if !view.board.is_empty() {
         let mut board_str = String::new();
         for card in view.board.iter() {
-            write!(&mut board_str, "{} ", format_card(card)).unwrap();
+            let _ = write!(&mut board_str, "{} ", format_card(card));
         }
         println!("Board: {}", board_str);
     }
@@ -260,7 +260,7 @@ fn display_game_view(view: &GameView) {
             let cards_str = if !player.cards.is_empty() {
                 let mut s = String::new();
                 for card in &player.cards {
-                    write!(&mut s, "{} ", format_card(card)).unwrap();
+                    let _ = write!(&mut s, "{} ", format_card(card));
                 }
                 s.trim().to_string()
             } else {

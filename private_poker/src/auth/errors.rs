@@ -74,5 +74,22 @@ pub enum AuthError {
     InvalidResetCode,
 }
 
+impl AuthError {
+    /// Get a client-safe error message that doesn't leak sensitive information
+    ///
+    /// Database and JWT errors are sanitized to prevent information disclosure
+    /// about the internal system structure.
+    pub fn client_message(&self) -> String {
+        match self {
+            // Sanitize database errors - don't expose SQL details
+            AuthError::Database(_) => "Internal server error".to_string(),
+            // Sanitize JWT errors - don't expose token structure
+            AuthError::JwtError(_) => "Authentication failed".to_string(),
+            // All other errors are safe to expose
+            _ => self.to_string(),
+        }
+    }
+}
+
 /// Result type for authentication operations
 pub type AuthResult<T> = Result<T, AuthError>;

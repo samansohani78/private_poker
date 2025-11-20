@@ -6,6 +6,9 @@ use sqlx::PgPool;
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
+/// Maximum bots allowed per table (prevents unbounded spawning)
+const MAX_BOTS_PER_TABLE: usize = 8;
+
 /// Bot manager for a single table
 pub struct BotManager {
     /// Table ID
@@ -100,9 +103,23 @@ impl BotManager {
     /// * `Result<usize, String>` - Number of bots spawned
     pub async fn spawn_bots(&mut self, count: usize) -> Result<usize, String> {
         let mut bots = self.bots.write().await;
+        let current_bot_count = bots.len();
+
+        // Enforce maximum bots per table
+        if current_bot_count >= MAX_BOTS_PER_TABLE {
+            return Err(format!(
+                "Maximum bot limit ({}) reached for table {}",
+                MAX_BOTS_PER_TABLE, self.table_id
+            ));
+        }
+
+        // Cap spawn count to not exceed maximum
+        let max_allowed = MAX_BOTS_PER_TABLE - current_bot_count;
+        let spawn_count = count.min(max_allowed);
+
         let mut spawned = 0;
 
-        for _ in 0..count {
+        for _ in 0..spawn_count {
             let bot_id = self.next_bot_id;
             self.next_bot_id += 1;
 
@@ -123,6 +140,16 @@ impl BotManager {
                 bot_id,
                 self.config.bot_difficulty,
                 self.table_id
+            );
+        }
+
+        if spawn_count < count {
+            log::warn!(
+                "Table {}: Requested {} bots but only spawned {} (max limit: {})",
+                self.table_id,
+                count,
+                spawned,
+                MAX_BOTS_PER_TABLE
             );
         }
 

@@ -154,30 +154,41 @@ impl WalletManager {
             return Err(WalletError::DuplicateTransaction(idempotency_key));
         }
 
-        // Get current wallet balance (with row lock)
-        let wallet_row = sqlx::query("SELECT balance FROM wallets WHERE user_id = $1 FOR UPDATE")
-            .bind(user_id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or(WalletError::WalletNotFound(user_id))?;
+        // Atomically debit wallet with balance check
+        // This prevents race conditions by checking and updating in a single atomic operation
+        let wallet_result = sqlx::query(
+            "UPDATE wallets
+             SET balance = balance - $1, updated_at = NOW()
+             WHERE user_id = $2 AND balance >= $1
+             RETURNING balance",
+        )
+        .bind(amount)
+        .bind(user_id)
+        .fetch_optional(&mut *tx)
+        .await?;
 
-        let current_balance: i64 = wallet_row.get("balance");
+        let new_balance: i64 = match wallet_result {
+            Some(row) => row.get("balance"),
+            None => {
+                // Either wallet doesn't exist or insufficient balance
+                // Check which case it is
+                let check_wallet = sqlx::query("SELECT balance FROM wallets WHERE user_id = $1")
+                    .bind(user_id)
+                    .fetch_optional(&mut *tx)
+                    .await?;
 
-        // Check sufficient balance
-        if current_balance < amount {
-            return Err(WalletError::InsufficientBalance {
-                available: current_balance,
-                required: amount,
-            });
-        }
-
-        // Debit user wallet
-        let new_balance = current_balance - amount;
-        sqlx::query("UPDATE wallets SET balance = $1, updated_at = NOW() WHERE user_id = $2")
-            .bind(new_balance)
-            .bind(user_id)
-            .execute(&mut *tx)
-            .await?;
+                match check_wallet {
+                    Some(row) => {
+                        let current_balance: i64 = row.get("balance");
+                        return Err(WalletError::InsufficientBalance {
+                            available: current_balance,
+                            required: amount,
+                        });
+                    }
+                    None => return Err(WalletError::WalletNotFound(user_id)),
+                }
+            }
+        };
 
         // Create debit entry
         self.create_entry(
@@ -256,50 +267,55 @@ impl WalletManager {
             return Err(WalletError::DuplicateTransaction(idempotency_key));
         }
 
-        // Get current escrow balance (with row lock)
-        let escrow_row =
-            sqlx::query("SELECT balance FROM table_escrows WHERE table_id = $1 FOR UPDATE")
-                .bind(table_id)
-                .fetch_optional(&mut *tx)
-                .await?
-                .ok_or(WalletError::EscrowNotFound(table_id))?;
-
-        let escrow_balance: i64 = escrow_row.get("balance");
-
-        // Check sufficient escrow balance
-        if escrow_balance < amount {
-            return Err(WalletError::InsufficientBalance {
-                available: escrow_balance,
-                required: amount,
-            });
-        }
-
-        // Debit escrow
-        let new_escrow_balance = escrow_balance - amount;
-        sqlx::query(
-            "UPDATE table_escrows SET balance = $1, updated_at = NOW() WHERE table_id = $2",
+        // Atomically debit escrow with balance check
+        let escrow_result = sqlx::query(
+            "UPDATE table_escrows
+             SET balance = balance - $1, updated_at = NOW()
+             WHERE table_id = $2 AND balance >= $1
+             RETURNING balance",
         )
-        .bind(new_escrow_balance)
+        .bind(amount)
         .bind(table_id)
-        .execute(&mut *tx)
+        .fetch_optional(&mut *tx)
         .await?;
 
-        // Get current wallet balance (with row lock)
-        let wallet_row = sqlx::query("SELECT balance FROM wallets WHERE user_id = $1 FOR UPDATE")
-            .bind(user_id)
-            .fetch_optional(&mut *tx)
-            .await?
-            .ok_or(WalletError::WalletNotFound(user_id))?;
+        let _new_escrow_balance: i64 = match escrow_result {
+            Some(row) => row.get("balance"),
+            None => {
+                // Either escrow doesn't exist or insufficient balance
+                let check_escrow = sqlx::query("SELECT balance FROM table_escrows WHERE table_id = $1")
+                    .bind(table_id)
+                    .fetch_optional(&mut *tx)
+                    .await?;
 
-        let current_balance: i64 = wallet_row.get("balance");
+                match check_escrow {
+                    Some(row) => {
+                        let current_balance: i64 = row.get("balance");
+                        return Err(WalletError::InsufficientBalance {
+                            available: current_balance,
+                            required: amount,
+                        });
+                    }
+                    None => return Err(WalletError::EscrowNotFound(table_id)),
+                }
+            }
+        };
 
-        // Credit user wallet
-        let new_balance = current_balance + amount;
-        sqlx::query("UPDATE wallets SET balance = $1, updated_at = NOW() WHERE user_id = $2")
-            .bind(new_balance)
-            .bind(user_id)
-            .execute(&mut *tx)
-            .await?;
+        // Atomically credit user wallet
+        let wallet_result = sqlx::query(
+            "UPDATE wallets
+             SET balance = balance + $1, updated_at = NOW()
+             WHERE user_id = $2
+             RETURNING balance",
+        )
+        .bind(amount)
+        .bind(user_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        let new_balance: i64 = wallet_result
+            .ok_or(WalletError::WalletNotFound(user_id))?
+            .get("balance");
 
         // Create credit entry
         self.create_entry(
@@ -338,9 +354,14 @@ impl WalletManager {
         // Start transaction
         let mut tx = self.pool.begin().await?;
 
-        // Check last claim
+        // Check last claim with row lock to prevent race conditions
+        // This prevents two concurrent claims from both passing the cooldown check
         let last_claim = sqlx::query(
-            "SELECT next_claim_at FROM faucet_claims WHERE user_id = $1 ORDER BY claimed_at DESC LIMIT 1",
+            "SELECT next_claim_at FROM faucet_claims
+             WHERE user_id = $1
+             ORDER BY claimed_at DESC
+             LIMIT 1
+             FOR UPDATE",
         )
         .bind(user_id)
         .fetch_optional(&mut *tx)
@@ -372,8 +393,9 @@ impl WalletManager {
             .execute(&mut *tx)
             .await?;
 
-        // Create credit entry
-        let idempotency_key = format!("faucet_{}_{}", user_id, Utc::now().timestamp());
+        // Create credit entry with collision-resistant idempotency key
+        // Using millisecond timestamp for better precision than second-level timestamp
+        let idempotency_key = format!("faucet_{}_{}", user_id, Utc::now().timestamp_millis());
         self.create_entry(
             &mut tx,
             user_id,

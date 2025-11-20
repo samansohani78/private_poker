@@ -20,6 +20,7 @@ use tokio::{
     sync::mpsc,
     time::{Duration, interval},
 };
+use uuid::Uuid;
 
 /// Table actor handle for sending messages
 #[derive(Clone)]
@@ -294,8 +295,24 @@ impl TableActor {
         {
             match passphrase {
                 Some(ref pass) => {
-                    // Simple string comparison (in production, use argon2 verify)
-                    if pass != required_hash {
+                    // Verify passphrase using argon2 with constant-time comparison
+                    use argon2::{Argon2, PasswordHash, PasswordVerifier};
+
+                    let parsed_hash = match PasswordHash::new(required_hash) {
+                        Ok(h) => h,
+                        Err(_) => {
+                            log::error!("Invalid passphrase hash format for table {}", self.id);
+                            return TableResponse::Error(
+                                "Internal server error: invalid passphrase configuration".to_string(),
+                            );
+                        }
+                    };
+
+                    let argon2 = Argon2::default();
+                    if argon2
+                        .verify_password(pass.as_bytes(), &parsed_hash)
+                        .is_err()
+                    {
                         return TableResponse::AccessDenied;
                     }
                 }
@@ -316,6 +333,16 @@ impl TableActor {
             ));
         }
 
+        // Enforce that buy-in must cover at least one big blind
+        // This prevents players from joining with insufficient chips to play
+        let big_blind = self.config.big_blind;
+        if buy_in_amount < big_blind {
+            return TableResponse::Error(format!(
+                "Buy-in ({}) must be at least the big blind ({})",
+                buy_in_amount, big_blind
+            ));
+        }
+
         // Check wallet balance
         match self.wallet_manager.get_wallet(user_id).await {
             Ok(wallet) => {
@@ -331,8 +358,13 @@ impl TableActor {
             }
         }
 
-        // Transfer chips to escrow
-        let idempotency_key = format!("join_{}_{}", user_id, chrono::Utc::now().timestamp());
+        // Transfer chips to escrow with collision-resistant idempotency key
+        let idempotency_key = format!(
+            "join_{}_{}_{}",
+            user_id,
+            chrono::Utc::now().timestamp_millis(),
+            Uuid::new_v4()
+        );
         match self
             .wallet_manager
             .transfer_to_escrow(user_id, self.id, buy_in_amount, idempotency_key)
@@ -363,16 +395,34 @@ impl TableActor {
                         TableResponse::Success
                     }
                     Err(e) => {
-                        // Rollback the transfer
+                        // Rollback the transfer with collision-resistant idempotency key
+                        // Using millisecond timestamp for better precision than second-level timestamp
                         let rollback_key = format!(
                             "rollback_join_{}_{}",
                             user_id,
-                            chrono::Utc::now().timestamp()
+                            chrono::Utc::now().timestamp_millis()
                         );
-                        let _ = self
+                        match self
                             .wallet_manager
                             .transfer_from_escrow(user_id, self.id, buy_in_amount, rollback_key)
-                            .await;
+                            .await
+                        {
+                            Ok(_) => {
+                                log::info!(
+                                    "Successfully rolled back join transfer for user {} on table {}",
+                                    user_id,
+                                    self.id
+                                );
+                            }
+                            Err(rollback_err) => {
+                                log::error!(
+                                    "CRITICAL: Failed to rollback join transfer for user {} on table {}: {}. Chips may be stuck in escrow!",
+                                    user_id,
+                                    self.id,
+                                    rollback_err
+                                );
+                            }
+                        }
 
                         TableResponse::Error(format!("Failed to join game: {:?}", e))
                     }
@@ -411,9 +461,13 @@ impl TableActor {
         // Remove user from game state
         match self.state.remove_user(&username) {
             Ok(_) => {
-                // Transfer chips back from escrow
-                let idempotency_key =
-                    format!("leave_{}_{}", user_id, chrono::Utc::now().timestamp());
+                // Transfer chips back from escrow with collision-resistant idempotency key
+                let idempotency_key = format!(
+                    "leave_{}_{}_{}",
+                    user_id,
+                    chrono::Utc::now().timestamp_millis(),
+                    Uuid::new_v4()
+                );
                 match self
                     .wallet_manager
                     .transfer_from_escrow(user_id, self.id, chip_count, idempotency_key)
@@ -452,6 +506,11 @@ impl TableActor {
                 return TableResponse::Error("User not at table".to_string());
             }
         };
+
+        // Verify user is actually a player (not just a spectator)
+        if !self.state.contains_player(&username) {
+            return TableResponse::Error("You must be seated at the table to take actions".to_string());
+        }
 
         // Validate it's the user's turn
         if let Some(next_username) = self.state.get_next_action_username() {
@@ -655,8 +714,13 @@ impl TableActor {
             }
         };
 
-        // Transfer chips from wallet to escrow
-        let idempotency_key = format!("topup_{}_{}", user_id, chrono::Utc::now().timestamp());
+        // Transfer chips from wallet to escrow with collision-resistant idempotency key
+        let idempotency_key = format!(
+            "topup_{}_{}_{}",
+            user_id,
+            chrono::Utc::now().timestamp_millis(),
+            Uuid::new_v4()
+        );
         match self
             .wallet_manager
             .transfer_to_escrow(user_id, self.id, amount, idempotency_key)
@@ -706,13 +770,11 @@ impl TableActor {
                                 let pot_size = bot_view.pot.size;
                                 let bot_chips = player_view.user.money;
 
-                                // Get current bet amount from the pot
-                                let current_bet = bot_view
-                                    .players
-                                    .iter()
-                                    .map(|p| p.user.money) // This is simplified - ideally we'd track bets
-                                    .max()
-                                    .unwrap_or_default();
+                                // Get the actual amount the bot needs to call from the pot
+                                let current_bet = self
+                                    .state
+                                    .get_call_amount_for_player(&next_username)
+                                    .unwrap_or(0);
 
                                 // Use decision maker with bot's difficulty parameters
                                 let mut decision_maker = BotDecisionMaker::new();
@@ -796,20 +858,20 @@ impl TableActor {
             return;
         }
 
-        // Track previous player count to detect hand completion
-        let prev_views = self.state.get_views();
-        let prev_count = prev_views.len();
+        // Track previous state to detect hand completion
+        let prev_is_lobby = matches!(self.state, crate::game::PokerState::Lobby(_));
 
         // Advance poker state FSM (take ownership and replace)
         let state = std::mem::take(&mut self.state);
         self.state = state.step();
 
-        // Check if hand completed (player count changed suggests state transition)
-        let curr_views = self.state.get_views();
-        let curr_count = curr_views.len();
+        // Check if hand completed by detecting transition TO Lobby state
+        // This is more reliable than counting players, which can change mid-hand
+        let curr_is_lobby = matches!(self.state, crate::game::PokerState::Lobby(_));
 
-        // Simple heuristic: if we have players and count changed, a hand might have completed
-        if prev_count > 0 && prev_count != curr_count {
+        // Hand completion = we were NOT in lobby, but now we ARE
+        // This happens after BootPlayers -> Lobby transition at end of hand
+        if !prev_is_lobby && curr_is_lobby {
             self.hand_count += 1;
             log::debug!("Table {} hand {} completed", self.id, self.hand_count);
         }

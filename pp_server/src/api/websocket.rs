@@ -71,13 +71,28 @@ pub struct WsQuery {
 }
 
 /// Client messages received via WebSocket
+///
+/// Note: Join functionality is intentionally disabled via WebSocket.
+/// Clients should use the HTTP API (POST /api/tables/{id}/join) for joining tables
+/// as it provides better error handling, idempotency, and atomic wallet operations.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ClientMessage {
-    Join { buy_in: i64 },
+    /// Join table (DISABLED - use HTTP API instead)
+    ///
+    /// This variant is kept for backwards compatibility with existing clients
+    /// but always returns an error directing users to the HTTP endpoint.
+    Join {
+        #[allow(dead_code)]
+        buy_in: i64,
+    },
+    /// Leave the current table
     Leave,
+    /// Take a poker action (fold, check, call, raise, all-in)
     Action { action: ActionData },
+    /// Start spectating the table
     Spectate,
+    /// Stop spectating the table
     StopSpectating,
 }
 
@@ -248,7 +263,7 @@ async fn handle_socket(socket: WebSocket, table_id: i64, user_id: i64, state: Ap
                     Err(e) => {
                         warn!("Failed to parse client message: {}", e);
                         ServerResponse::Error {
-                            message: format!("Invalid message format: {}", e),
+                            message: "Invalid message format".to_string(),
                         }
                     }
                 };
@@ -272,8 +287,38 @@ async fn handle_socket(socket: WebSocket, table_id: i64, user_id: i64, state: Ap
         }
     }
 
-    // Cleanup
+    // Cleanup - automatically leave table on disconnect
     send_task.abort();
+
+    // Attempt to leave table if user was playing
+    if let Some(table_handle) = state.table_manager.get_table(table_id).await {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let leave_msg = private_poker::table::messages::TableMessage::LeaveTable {
+            user_id,
+            response: tx,
+        };
+
+        if let Ok(()) = table_handle.send(leave_msg).await {
+            match rx.await {
+                Ok(private_poker::table::messages::TableResponse::Success) => {
+                    info!(
+                        "User {} automatically left table {} on WebSocket disconnect",
+                        user_id, table_id
+                    );
+                }
+                Ok(_) => {
+                    // User wasn't at table or already left - this is fine
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to get leave response for user {} on disconnect: {}",
+                        user_id, e
+                    );
+                }
+            }
+        }
+    }
+
     info!(
         "WebSocket disconnected: table={}, user={}",
         table_id, user_id
@@ -323,36 +368,10 @@ async fn handle_client_message(
     };
 
     match msg {
-        ClientMessage::Join { buy_in } => {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-
-            // Get username from user_id (simplified - in production, fetch from database)
-            let username = format!("user_{}", user_id);
-
-            if table_handle
-                .send(TableMessage::JoinTable {
-                    user_id,
-                    username,
-                    buy_in_amount: buy_in,
-                    passphrase: None,
-                    response: tx,
-                })
-                .await
-                .is_err()
-            {
-                return ServerResponse::Error {
-                    message: "Failed to send join request".to_string(),
-                };
-            }
-
-            match rx.await {
-                Ok(TableResponse::Success) => ServerResponse::Success {
-                    message: "Joined table successfully".to_string(),
-                },
-                Ok(TableResponse::Error(e)) => ServerResponse::Error { message: e },
-                _ => ServerResponse::Error {
-                    message: "Unexpected response".to_string(),
-                },
+        ClientMessage::Join { buy_in: _ } => {
+            // Join via WebSocket is disabled - use HTTP API instead
+            ServerResponse::Error {
+                message: "Please join via HTTP API: POST /api/tables/{id}/join with {\"buy_in_amount\": 1000}".to_string(),
             }
         }
 

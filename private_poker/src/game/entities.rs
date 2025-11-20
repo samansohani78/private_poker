@@ -101,6 +101,18 @@ pub struct Deck {
 
 impl Deck {
     pub fn deal_card(&mut self) -> Card {
+        // Bounds check to prevent deck exhaustion
+        if self.deck_idx >= self.cards.len() {
+            // This should never happen in normal play (52 cards > 10 players * 2 + 5 board)
+            // but we handle it defensively by reshuffling
+            log::error!(
+                "Deck exhausted unexpectedly! deck_idx={}, cards={}. Reshuffling.",
+                self.deck_idx,
+                self.cards.len()
+            );
+            self.shuffle();
+        }
+
         let card = self.cards[self.deck_idx];
         self.deck_idx += 1;
         card

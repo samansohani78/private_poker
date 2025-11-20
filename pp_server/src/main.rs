@@ -124,14 +124,27 @@ async fn main() -> Result<(), Error> {
     let wallet_manager = Arc::new(WalletManager::new(pool.clone()));
     let table_manager = Arc::new(TableManager::new(pool.clone(), wallet_manager.clone()));
 
+    // SECURITY: JWT_SECRET and PASSWORD_PEPPER are REQUIRED
+    // These are critical security parameters - server will not start without them
     let jwt_secret = std::env::var("JWT_SECRET")
-        .unwrap_or_else(|_| "default_jwt_secret_change_in_production".to_string());
+        .expect("FATAL: JWT_SECRET environment variable must be set! Generate with: openssl rand -hex 32");
     let pepper = std::env::var("PASSWORD_PEPPER")
-        .unwrap_or_else(|_| "default_pepper_change_in_production".to_string());
+        .expect("FATAL: PASSWORD_PEPPER environment variable must be set! Generate with: openssl rand -hex 16");
 
     let auth_manager = Arc::new(AuthManager::new(pool.clone(), pepper, jwt_secret));
 
-    info!("Creating {} initial table(s)...", args.num_tables);
+    // Load existing tables from database first
+    info!("Loading existing tables from database...");
+    match table_manager.load_existing_tables().await {
+        Ok(count) => {
+            info!("✓ Loaded {} existing table(s) from database", count);
+        }
+        Err(e) => {
+            log::error!("Failed to load existing tables: {}", e);
+        }
+    }
+
+    info!("Creating {} new table(s)...", args.num_tables);
 
     // Parse bot difficulty from env
     let bot_difficulty = std::env::var("DEFAULT_BOT_DIFFICULTY")
@@ -231,6 +244,7 @@ async fn main() -> Result<(), Error> {
         auth_manager,
         table_manager,
         wallet_manager,
+        pool: pool.clone(),
     };
 
     // Create router

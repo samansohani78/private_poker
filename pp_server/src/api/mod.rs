@@ -47,16 +47,19 @@
 //! # use private_poker::auth::AuthManager;
 //! # use private_poker::table::TableManager;
 //! # use private_poker::wallet::WalletManager;
+//! # use sqlx::PgPool;
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! # let auth_manager: AuthManager = unimplemented!();
 //! # let table_manager: TableManager = unimplemented!();
 //! # let wallet_manager: WalletManager = unimplemented!();
+//! # let pool: PgPool = unimplemented!();
 //!
 //! // Create application state
 //! let state = AppState {
 //!     auth_manager: Arc::new(auth_manager),
 //!     table_manager: Arc::new(table_manager),
 //!     wallet_manager: Arc::new(wallet_manager),
+//!     pool: Arc::new(pool),
 //! };
 //!
 //! // Create router with all endpoints
@@ -92,6 +95,7 @@ use axum::{
     routing::{get, post},
 };
 use private_poker::{auth::AuthManager, table::TableManager, wallet::WalletManager};
+use sqlx::PgPool;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 
@@ -105,12 +109,15 @@ use tower_http::cors::CorsLayer;
 /// - `auth_manager`: Handles authentication, JWT tokens, and sessions
 /// - `table_manager`: Manages poker tables and forwards commands to table actors
 /// - `wallet_manager`: Manages user balances and transactions
+/// - `pool`: Database connection pool for direct queries
 #[derive(Clone)]
 pub struct AppState {
     pub auth_manager: Arc<AuthManager>,
     pub table_manager: Arc<TableManager>,
     #[allow(dead_code)]
     pub wallet_manager: Arc<WalletManager>,
+    #[allow(dead_code)]
+    pub pool: Arc<PgPool>,
 }
 
 /// Create the complete API router with all endpoints and middleware.
@@ -155,23 +162,32 @@ pub struct AppState {
 /// # }
 /// ```
 pub fn create_router(state: AppState) -> Router {
-    Router::new()
-        // Health check
+    // Public routes (no authentication middleware)
+    let public_routes = Router::new()
         .route("/health", get(health_check))
-        // Authentication routes
         .route("/api/auth/register", post(auth::register))
         .route("/api/auth/login", post(auth::login))
+        .route("/api/tables", get(tables::list_tables))
+        // WebSocket route handles its own auth via query parameter
+        .route("/ws/{table_id}", get(websocket::websocket_handler));
+
+    // Protected routes (require authentication middleware)
+    let protected_routes = Router::new()
         .route("/api/auth/logout", post(auth::logout))
         .route("/api/auth/refresh", post(auth::refresh_token))
-        // Table routes (require authentication)
-        .route("/api/tables", get(tables::list_tables))
         .route("/api/tables/{table_id}", get(tables::get_table))
         .route("/api/tables/{table_id}/join", post(tables::join_table))
         .route("/api/tables/{table_id}/leave", post(tables::leave_table))
         .route("/api/tables/{table_id}/action", post(tables::take_action))
-        // WebSocket route
-        .route("/ws/{table_id}", get(websocket::websocket_handler))
-        // CORS middleware
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middleware::auth_middleware,
+        ));
+
+    // Combine routes
+    Router::new()
+        .merge(public_routes)
+        .merge(protected_routes)
         .layer(CorsLayer::permissive())
         .with_state(state)
 }

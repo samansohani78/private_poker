@@ -128,7 +128,7 @@ pub async fn register(
                 Err(e) => Err((
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(ErrorResponse {
-                        error: e.to_string(),
+                        error: e.client_message(),
                     }),
                 )),
             }
@@ -136,7 +136,7 @@ pub async fn register(
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
-                error: e.to_string(),
+                error: e.client_message(),
             }),
         )),
     }
@@ -201,7 +201,7 @@ pub async fn login(
         Err(e) => Err((
             StatusCode::UNAUTHORIZED,
             Json(ErrorResponse {
-                error: e.to_string(),
+                error: e.client_message(),
             }),
         )),
     }
@@ -240,7 +240,7 @@ pub async fn logout(
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
-                error: e.to_string(),
+                error: e.client_message(),
             }),
         )),
     }
@@ -301,14 +301,14 @@ pub async fn refresh_token(
             Err(e) => Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(ErrorResponse {
-                    error: e.to_string(),
+                    error: e.client_message(),
                 }),
             )),
         },
         Err(e) => Err((
             StatusCode::UNAUTHORIZED,
             Json(ErrorResponse {
-                error: e.to_string(),
+                error: e.client_message(),
             }),
         )),
     }

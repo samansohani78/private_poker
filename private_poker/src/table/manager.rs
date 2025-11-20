@@ -37,6 +37,9 @@ pub struct TableManager {
 
     /// Next table ID (for in-memory tables)
     next_table_id: Arc<RwLock<TableId>>,
+
+    /// Cached player counts (avoids N+1 query on list_tables)
+    player_count_cache: Arc<RwLock<HashMap<TableId, usize>>>,
 }
 
 impl TableManager {
@@ -56,7 +59,117 @@ impl TableManager {
             wallet_manager,
             tables: Arc::new(RwLock::new(HashMap::new())),
             next_table_id: Arc::new(RwLock::new(1)),
+            player_count_cache: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// Load existing tables from database and spawn actors
+    ///
+    /// Queries the database for all active tables and spawns table actors for them.
+    /// Updates next_table_id to be one more than the highest existing table ID.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<usize, String>` - Number of tables loaded, or error
+    pub async fn load_existing_tables(&self) -> Result<usize, String> {
+        use crate::table::config::{BotDifficulty, TableSpeed};
+
+        // Query all active tables from database
+        let rows = sqlx::query(
+            r#"
+            SELECT id, name, max_players, small_blind, big_blind,
+                   min_buy_in_bb, max_buy_in_bb, absolute_chip_cap, top_up_cooldown_hands,
+                   speed, bots_enabled, target_bot_count, bot_difficulty,
+                   is_private, passphrase_hash, invite_token, invite_expires_at
+            FROM tables
+            WHERE is_active = true
+            ORDER BY id ASC
+            "#,
+        )
+        .fetch_all(self.pool.as_ref())
+        .await
+        .map_err(|e| format!("Failed to load tables from database: {}", e))?;
+
+        if rows.is_empty() {
+            return Ok(0);
+        }
+
+        let mut max_id = 0i64;
+        let mut loaded_count = 0;
+
+        for row in rows {
+            let table_id: i64 = row.get("id");
+            max_id = max_id.max(table_id);
+
+            // Parse table configuration from database row
+            let speed_str: String = row.get("speed");
+            let speed = match speed_str.as_str() {
+                "turbo" => TableSpeed::Turbo,
+                "hyper" => TableSpeed::Hyper,
+                _ => TableSpeed::Normal,
+            };
+
+            let difficulty_str: String = row.get("bot_difficulty");
+            let bot_difficulty = match difficulty_str.as_str() {
+                "easy" => BotDifficulty::Easy,
+                "tag" => BotDifficulty::Tag,
+                _ => BotDifficulty::Standard,
+            };
+
+            let config = TableConfig {
+                name: row.get("name"),
+                max_players: row.get::<i32, _>("max_players") as usize,
+                small_blind: row.get("small_blind"),
+                big_blind: row.get("big_blind"),
+                min_buy_in_bb: row.get::<i16, _>("min_buy_in_bb") as u8,
+                max_buy_in_bb: row.get::<i16, _>("max_buy_in_bb") as u8,
+                absolute_chip_cap: row.get("absolute_chip_cap"),
+                top_up_cooldown_hands: row.get::<i16, _>("top_up_cooldown_hands") as u8,
+                speed,
+                bots_enabled: row.get("bots_enabled"),
+                target_bot_count: row.get::<i16, _>("target_bot_count") as u8,
+                bot_difficulty,
+                is_private: row.get("is_private"),
+                passphrase_hash: row.get("passphrase_hash"),
+                invite_token: row.get("invite_token"),
+                invite_expires_at: row
+                    .get::<Option<chrono::NaiveDateTime>, _>("invite_expires_at")
+                    .map(|dt| chrono::DateTime::from_naive_utc_and_offset(dt, chrono::Utc)),
+            };
+
+            // Create and spawn table actor
+            let (actor, handle) = TableActor::new(
+                table_id,
+                config,
+                self.wallet_manager.clone(),
+                self.pool.clone(),
+            );
+
+            // Store handle
+            let mut tables = self.tables.write().await;
+            tables.insert(table_id, handle.clone());
+            drop(tables);
+
+            // Initialize player count cache to 0 (will be updated by table state queries)
+            let mut cache = self.player_count_cache.write().await;
+            cache.insert(table_id, 0);
+            drop(cache);
+
+            // Spawn actor task
+            tokio::spawn(async move {
+                actor.run().await;
+            });
+
+            log::info!("Loaded and spawned existing table {}", table_id);
+            loaded_count += 1;
+        }
+
+        // Update next_table_id to be one more than the highest existing ID
+        let mut next_id = self.next_table_id.write().await;
+        *next_id = max_id + 1;
+        drop(next_id);
+
+        Ok(loaded_count)
     }
 
     /// Create and spawn a new table
@@ -136,6 +249,11 @@ impl TableManager {
         tables.insert(table_id, handle.clone());
         drop(tables);
 
+        // Initialize player count cache to 0
+        let mut cache = self.player_count_cache.write().await;
+        cache.insert(table_id, 0);
+        drop(cache);
+
         // Spawn actor task
         tokio::spawn(async move {
             actor.run().await;
@@ -178,29 +296,16 @@ impl TableManager {
         .await
         .map_err(|e| format!("Database error: {}", e))?;
 
+        // Read player count cache once (avoids N+1 query problem)
+        let cache = self.player_count_cache.read().await;
+
         let mut metadata_list = Vec::new();
 
         for row in rows {
             let table_id: i64 = row.get("id");
 
-            // Get current player count from table state
-            let player_count = if let Some(handle) = self.get_table(table_id).await {
-                let (tx, rx) = oneshot::channel();
-                let _ = handle
-                    .send(TableMessage::GetState {
-                        user_id: None,
-                        response: tx,
-                    })
-                    .await;
-
-                if let Ok(state) = rx.await {
-                    state.player_count
-                } else {
-                    0
-                }
-            } else {
-                0
-            };
+            // Get player count from cache (O(1) lookup vs N async message calls)
+            let player_count = cache.get(&table_id).copied().unwrap_or(0);
 
             metadata_list.push(TableMetadata {
                 id: table_id,
@@ -245,6 +350,11 @@ impl TableManager {
         let mut tables = self.tables.write().await;
         tables.remove(&table_id);
         drop(tables);
+
+        // Remove from player count cache
+        let mut cache = self.player_count_cache.write().await;
+        cache.remove(&table_id);
+        drop(cache);
 
         // Mark as inactive in database
         sqlx::query("UPDATE tables SET is_active = false WHERE id = $1")
@@ -296,8 +406,16 @@ impl TableManager {
             .await
             .map_err(|e| format!("Failed to send message: {}", e))?;
 
-        rx.await
-            .map_err(|_| "Failed to receive response".to_string())
+        let response = rx.await
+            .map_err(|_| "Failed to receive response".to_string())?;
+
+        // Update cache on successful join
+        if response.is_success()
+            && let Ok(state) = self.get_table_state(table_id, None).await {
+                self.update_player_count_cache(table_id, state.player_count).await;
+            }
+
+        Ok(response)
     }
 
     /// Leave a table
@@ -329,8 +447,16 @@ impl TableManager {
             .await
             .map_err(|e| format!("Failed to send message: {}", e))?;
 
-        rx.await
-            .map_err(|_| "Failed to receive response".to_string())
+        let response = rx.await
+            .map_err(|_| "Failed to receive response".to_string())?;
+
+        // Update cache on successful leave
+        if response.is_success()
+            && let Ok(state) = self.get_table_state(table_id, None).await {
+                self.update_player_count_cache(table_id, state.player_count).await;
+            }
+
+        Ok(response)
     }
 
     /// Get table state
@@ -370,5 +496,19 @@ impl TableManager {
     pub async fn active_table_count(&self) -> usize {
         let tables = self.tables.read().await;
         tables.len()
+    }
+
+    /// Update player count cache for a table
+    ///
+    /// This should be called by table actors when player count changes
+    /// (on join, leave, or state updates) to keep the cache fresh.
+    ///
+    /// # Arguments
+    ///
+    /// * `table_id` - Table ID
+    /// * `player_count` - Current player count
+    pub async fn update_player_count_cache(&self, table_id: TableId, player_count: usize) {
+        let mut cache = self.player_count_cache.write().await;
+        cache.insert(table_id, player_count);
     }
 }

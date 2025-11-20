@@ -222,6 +222,8 @@ impl TurnWarnings {
 pub struct TuiApp {
     username: Username,
     table_name: String,
+    table_id: i64,
+    api_client: crate::api_client::ApiClient,
     /// Whether to display the help menu window
     show_help_menu: bool,
     /// Helps scroll through the help menu window if the terminal is small
@@ -239,7 +241,7 @@ pub struct TuiApp {
 }
 
 impl TuiApp {
-    pub fn new(username: String, table_name: String, initial_view: GameView) -> Self {
+    pub fn new(username: String, table_name: String, table_id: i64, api_client: crate::api_client::ApiClient, initial_view: GameView) -> Self {
         // Fill help menu with help text lines
         let mut help_handle = ScrollableList::new(MAX_LOG_RECORDS);
         help_handle.push("".into());
@@ -252,6 +254,8 @@ impl TuiApp {
         Self {
             username: Username::new(&username),
             table_name,
+            table_id,
+            api_client,
             show_help_menu: false,
             help_handle,
             log_handle: ScrollableList::new(MAX_LOG_RECORDS),
@@ -316,16 +320,35 @@ impl TuiApp {
     }
 
     /// Handle user input and send command
-    fn handle_command(
+    async fn handle_command(
         &mut self,
         user_input: &str,
         tx: &mpsc::UnboundedSender<ClientCommand>,
     ) -> Result<()> {
         match self.parse_command(user_input) {
             Ok(command) => {
-                tx.send(command)?;
-                let record = Record::new(RecordKind::You, user_input.to_string());
-                self.log_handle.push(record.into());
+                // Intercept Join command to call HTTP API first
+                if let ClientCommand::Join { buy_in } = &command {
+                    let record = Record::new(RecordKind::You, format!("join {}", buy_in));
+                    self.log_handle.push(record.into());
+
+                    // Call HTTP API to join table
+                    match self.api_client.join_table(self.table_id, *buy_in).await {
+                        Ok(_) => {
+                            let record = Record::new(RecordKind::Ack, "Joined table successfully via HTTP API".to_string());
+                            self.log_handle.push(record.into());
+                        }
+                        Err(e) => {
+                            let record = Record::new(RecordKind::Error, format!("Failed to join table: {}", e));
+                            self.log_handle.push(record.into());
+                        }
+                    }
+                    // Don't send Join command via WebSocket
+                } else {
+                    tx.send(command)?;
+                    let record = Record::new(RecordKind::You, user_input.to_string());
+                    self.log_handle.push(record.into());
+                }
             }
             Err(e) => {
                 let record = Record::new(RecordKind::Error, e.to_string());
@@ -663,7 +686,7 @@ impl TuiApp {
                     KeyModifiers::NONE => match code {
                         KeyCode::Enter => {
                             let user_input = self.user_input.submit();
-                            self.handle_command(&user_input, &tx_command)?;
+                            self.handle_command(&user_input, &tx_command).await?;
                         }
                         KeyCode::Char(to_insert) => self.user_input.input(to_insert),
                         KeyCode::Backspace => self.user_input.backspace(),

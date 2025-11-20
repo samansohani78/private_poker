@@ -7,16 +7,16 @@ use anyhow::{Context, Result};
 use pico_args::Arguments;
 use std::io::{self, Write};
 
+#[allow(dead_code)]
 mod api_client;
 #[allow(dead_code)]
 mod app;
 #[allow(dead_code)]
 mod commands;
+#[allow(dead_code)]
 mod websocket_client;
 
-use api_client::ApiClient;
-use pp_client::tui_app::TuiApp;
-use websocket_client::WebSocketClient;
+use pp_client::{api_client::ApiClient, tui_app::TuiApp, websocket_client::WebSocketClient};
 
 const HELP: &str = "\
 Connect to a private poker server
@@ -165,7 +165,13 @@ async fn run(args: Args) -> Result<()> {
         let terminal = ratatui::init();
 
         // Create and run TUI app
-        let tui_app = TuiApp::new(username.clone(), selected_table.name.clone(), initial_view);
+        let tui_app = TuiApp::new(
+            username.clone(),
+            selected_table.name.clone(),
+            selected_table.id,
+            api_client,
+            initial_view
+        );
 
         let result = tui_app.run(ws_url, terminal).await;
 
