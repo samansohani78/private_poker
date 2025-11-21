@@ -290,3 +290,361 @@ impl BotPlayer {
         self.stats.showdown_count += 1;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_difficulty_params_easy() {
+        let params = DifficultyParams::easy();
+        assert_eq!(params.vpip, 0.45);
+        assert_eq!(params.pfr, 0.10);
+        assert_eq!(params.aggression_factor, 0.5);
+        assert!(!params.bluffs);
+        assert_eq!(params.bluff_frequency, 0.0);
+    }
+
+    #[test]
+    fn test_difficulty_params_standard() {
+        let params = DifficultyParams::standard();
+        assert_eq!(params.vpip, 0.30);
+        assert_eq!(params.pfr, 0.20);
+        assert_eq!(params.aggression_factor, 1.5);
+        assert!(params.bluffs);
+        assert_eq!(params.bluff_frequency, 0.15);
+    }
+
+    #[test]
+    fn test_difficulty_params_tag() {
+        let params = DifficultyParams::tag();
+        assert_eq!(params.vpip, 0.20);
+        assert_eq!(params.pfr, 0.18);
+        assert_eq!(params.aggression_factor, 2.5);
+        assert!(params.bluffs);
+        assert_eq!(params.bluff_frequency, 0.25);
+    }
+
+    #[test]
+    fn test_difficulty_params_from_difficulty() {
+        let easy = DifficultyParams::from_difficulty(BotDifficulty::Easy);
+        assert_eq!(easy.vpip, 0.45);
+
+        let standard = DifficultyParams::from_difficulty(BotDifficulty::Standard);
+        assert_eq!(standard.vpip, 0.30);
+
+        let tag = DifficultyParams::from_difficulty(BotDifficulty::Tag);
+        assert_eq!(tag.vpip, 0.20);
+    }
+
+    #[test]
+    fn test_bot_stats_vpip_zero_hands() {
+        let stats = BotStats::default();
+        assert_eq!(stats.vpip(), 0.0);
+    }
+
+    #[test]
+    fn test_bot_stats_vpip_calculation() {
+        let mut stats = BotStats::default();
+        stats.hands_played = 100;
+        stats.vpip_count = 30;
+        assert_eq!(stats.vpip(), 0.30);
+    }
+
+    #[test]
+    fn test_bot_stats_pfr_zero_hands() {
+        let stats = BotStats::default();
+        assert_eq!(stats.pfr(), 0.0);
+    }
+
+    #[test]
+    fn test_bot_stats_pfr_calculation() {
+        let mut stats = BotStats::default();
+        stats.hands_played = 100;
+        stats.pfr_count = 20;
+        assert_eq!(stats.pfr(), 0.20);
+    }
+
+    #[test]
+    fn test_bot_stats_aggression_factor_zero_passive() {
+        let mut stats = BotStats::default();
+        stats.aggressive_actions = 50;
+        stats.passive_actions = 0;
+        assert_eq!(stats.aggression_factor(), 50.0);
+    }
+
+    #[test]
+    fn test_bot_stats_aggression_factor_calculation() {
+        let mut stats = BotStats::default();
+        stats.aggressive_actions = 60;
+        stats.passive_actions = 40;
+        assert_eq!(stats.aggression_factor(), 1.5);
+    }
+
+    #[test]
+    fn test_bot_stats_showdown_rate_zero_hands() {
+        let stats = BotStats::default();
+        assert_eq!(stats.showdown_rate(), 0.0);
+    }
+
+    #[test]
+    fn test_bot_stats_showdown_rate_calculation() {
+        let mut stats = BotStats::default();
+        stats.hands_played = 100;
+        stats.showdown_count = 25;
+        assert_eq!(stats.showdown_rate(), 0.25);
+    }
+
+    #[test]
+    fn test_bot_stats_win_rate_zero_hands() {
+        let stats = BotStats::default();
+        assert_eq!(stats.win_rate(), 0.0);
+    }
+
+    #[test]
+    fn test_bot_stats_win_rate_positive() {
+        let mut stats = BotStats::default();
+        stats.starting_chips = 1000;
+        stats.current_chips = 1500;
+        stats.hands_played = 100;
+        assert_eq!(stats.win_rate(), 5.0); // +500 chips / 100 hands = 5.0
+    }
+
+    #[test]
+    fn test_bot_stats_win_rate_negative() {
+        let mut stats = BotStats::default();
+        stats.starting_chips = 1000;
+        stats.current_chips = 800;
+        stats.hands_played = 50;
+        assert_eq!(stats.win_rate(), -4.0); // -200 chips / 50 hands = -4.0
+    }
+
+    #[test]
+    fn test_bot_player_new() {
+        let config = BotConfig {
+            id: 1,
+            name: "TestBot".to_string(),
+            difficulty: BotDifficulty::Standard,
+            table_id: 1,
+            starting_chips: 1000,
+        };
+
+        let bot = BotPlayer::new(config.clone());
+        assert_eq!(bot.config.id, 1);
+        assert_eq!(bot.config.name, "TestBot");
+        assert_eq!(bot.stats.starting_chips, 1000);
+        assert_eq!(bot.stats.current_chips, 1000);
+        assert!(bot.last_action_time.is_none());
+    }
+
+    #[test]
+    fn test_bot_player_get_think_delay_ms() {
+        let config = BotConfig {
+            id: 1,
+            name: "TestBot".to_string(),
+            difficulty: BotDifficulty::Standard,
+            table_id: 1,
+            starting_chips: 1000,
+        };
+
+        let bot = BotPlayer::new(config);
+        let delay = bot.get_think_delay_ms();
+
+        // Should be at least 500ms (minimum)
+        assert!(delay >= 500);
+
+        // Should be roughly around base time ± variance
+        // Standard has 2000ms base and 1500ms variance, so 500-3500ms range
+        assert!(delay <= 4000);
+    }
+
+    #[test]
+    fn test_bot_player_record_hand_won() {
+        let config = BotConfig {
+            id: 1,
+            name: "TestBot".to_string(),
+            difficulty: BotDifficulty::Easy,
+            table_id: 1,
+            starting_chips: 1000,
+        };
+
+        let mut bot = BotPlayer::new(config);
+        bot.record_hand(true, 1200);
+
+        assert_eq!(bot.stats.hands_played, 1);
+        assert_eq!(bot.stats.hands_won, 1);
+        assert_eq!(bot.stats.current_chips, 1200);
+    }
+
+    #[test]
+    fn test_bot_player_record_hand_lost() {
+        let config = BotConfig {
+            id: 1,
+            name: "TestBot".to_string(),
+            difficulty: BotDifficulty::Easy,
+            table_id: 1,
+            starting_chips: 1000,
+        };
+
+        let mut bot = BotPlayer::new(config);
+        bot.record_hand(false, 900);
+
+        assert_eq!(bot.stats.hands_played, 1);
+        assert_eq!(bot.stats.hands_won, 0);
+        assert_eq!(bot.stats.current_chips, 900);
+    }
+
+    #[test]
+    fn test_bot_player_record_vpip() {
+        let config = BotConfig {
+            id: 1,
+            name: "TestBot".to_string(),
+            difficulty: BotDifficulty::Tag,
+            table_id: 1,
+            starting_chips: 1000,
+        };
+
+        let mut bot = BotPlayer::new(config);
+        bot.record_vpip();
+        bot.record_vpip();
+
+        assert_eq!(bot.stats.vpip_count, 2);
+    }
+
+    #[test]
+    fn test_bot_player_record_pfr() {
+        let config = BotConfig {
+            id: 1,
+            name: "TestBot".to_string(),
+            difficulty: BotDifficulty::Tag,
+            table_id: 1,
+            starting_chips: 1000,
+        };
+
+        let mut bot = BotPlayer::new(config);
+        bot.record_pfr();
+
+        assert_eq!(bot.stats.pfr_count, 1);
+    }
+
+    #[test]
+    fn test_bot_player_record_aggressive_action() {
+        let config = BotConfig {
+            id: 1,
+            name: "TestBot".to_string(),
+            difficulty: BotDifficulty::Standard,
+            table_id: 1,
+            starting_chips: 1000,
+        };
+
+        let mut bot = BotPlayer::new(config);
+        bot.record_aggressive_action();
+        bot.record_aggressive_action();
+        bot.record_aggressive_action();
+
+        assert_eq!(bot.stats.aggressive_actions, 3);
+    }
+
+    #[test]
+    fn test_bot_player_record_passive_action() {
+        let config = BotConfig {
+            id: 1,
+            name: "TestBot".to_string(),
+            difficulty: BotDifficulty::Easy,
+            table_id: 1,
+            starting_chips: 1000,
+        };
+
+        let mut bot = BotPlayer::new(config);
+        bot.record_passive_action();
+        bot.record_passive_action();
+
+        assert_eq!(bot.stats.passive_actions, 2);
+    }
+
+    #[test]
+    fn test_bot_player_record_showdown() {
+        let config = BotConfig {
+            id: 1,
+            name: "TestBot".to_string(),
+            difficulty: BotDifficulty::Standard,
+            table_id: 1,
+            starting_chips: 1000,
+        };
+
+        let mut bot = BotPlayer::new(config);
+        bot.record_showdown();
+
+        assert_eq!(bot.stats.showdown_count, 1);
+    }
+
+    #[test]
+    fn test_bot_player_full_session() {
+        let config = BotConfig {
+            id: 1,
+            name: "TestBot".to_string(),
+            difficulty: BotDifficulty::Standard,
+            table_id: 1,
+            starting_chips: 1000,
+        };
+
+        let mut bot = BotPlayer::new(config);
+
+        // Play 10 hands
+        for i in 0..10 {
+            // VPIP in 3 out of 10 hands (30%)
+            if i < 3 {
+                bot.record_vpip();
+                bot.record_pfr(); // Also raise pre-flop
+                bot.record_aggressive_action();
+            }
+
+            // Win 4 hands
+            let won = i < 4;
+            let chips = if won { 1000 + (i + 1) * 50 } else { 1000 };
+            bot.record_hand(won, chips);
+        }
+
+        assert_eq!(bot.stats.hands_played, 10);
+        assert_eq!(bot.stats.hands_won, 4);
+        assert_eq!(bot.stats.vpip_count, 3);
+        assert_eq!(bot.stats.pfr_count, 3);
+        assert_eq!(bot.stats.vpip(), 0.30);
+        assert_eq!(bot.stats.pfr(), 0.30);
+    }
+
+    #[test]
+    fn test_bot_config_clone() {
+        let config = BotConfig {
+            id: 1,
+            name: "TestBot".to_string(),
+            difficulty: BotDifficulty::Easy,
+            table_id: 1,
+            starting_chips: 1000,
+        };
+
+        let cloned = config.clone();
+        assert_eq!(config.id, cloned.id);
+        assert_eq!(config.name, cloned.name);
+    }
+
+    #[test]
+    fn test_difficulty_params_clone() {
+        let params = DifficultyParams::standard();
+        let cloned = params.clone();
+        assert_eq!(params.vpip, cloned.vpip);
+        assert_eq!(params.pfr, cloned.pfr);
+    }
+
+    #[test]
+    fn test_bot_stats_default() {
+        let stats = BotStats::default();
+        assert_eq!(stats.hands_played, 0);
+        assert_eq!(stats.hands_won, 0);
+        assert_eq!(stats.vpip_count, 0);
+        assert_eq!(stats.pfr_count, 0);
+        assert_eq!(stats.showdown_count, 0);
+        assert_eq!(stats.aggressive_actions, 0);
+        assert_eq!(stats.passive_actions, 0);
+    }
+}

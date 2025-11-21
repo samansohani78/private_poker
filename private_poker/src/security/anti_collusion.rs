@@ -485,3 +485,101 @@ impl IpTableRestrictions {
         Ok(!same_ip)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_flag_severity_display() {
+        assert_eq!(FlagSeverity::Low.to_string(), "low");
+        assert_eq!(FlagSeverity::Medium.to_string(), "medium");
+        assert_eq!(FlagSeverity::High.to_string(), "high");
+    }
+
+    #[test]
+    fn test_flag_severity_equality() {
+        assert_eq!(FlagSeverity::Low, FlagSeverity::Low);
+        assert_ne!(FlagSeverity::Low, FlagSeverity::Medium);
+        assert_ne!(FlagSeverity::Medium, FlagSeverity::High);
+    }
+
+    #[test]
+    fn test_flag_type_display() {
+        assert_eq!(FlagType::SameIpTable.to_string(), "same_ip_table");
+        assert_eq!(FlagType::WinRateAnomaly.to_string(), "win_rate_anomaly");
+        assert_eq!(FlagType::CoordinatedFolding.to_string(), "coordinated_folding");
+        assert_eq!(FlagType::SuspiciousTransfers.to_string(), "suspicious_transfers");
+        assert_eq!(FlagType::SeatManipulation.to_string(), "seat_manipulation");
+    }
+
+    #[test]
+    fn test_flag_type_equality() {
+        assert_eq!(FlagType::SameIpTable, FlagType::SameIpTable);
+        assert_ne!(FlagType::SameIpTable, FlagType::WinRateAnomaly);
+    }
+
+    #[test]
+    fn test_ip_table_restrictions_new() {
+        let restrictions = IpTableRestrictions::new(true);
+        assert!(restrictions.enforce_single_ip);
+
+        let restrictions = IpTableRestrictions::new(false);
+        assert!(!restrictions.enforce_single_ip);
+    }
+
+    #[test]
+    fn test_flag_severity_serialization() {
+        let low = FlagSeverity::Low;
+        let serialized = serde_json::to_string(&low).unwrap();
+        assert_eq!(serialized, "\"low\"");
+
+        let medium = FlagSeverity::Medium;
+        let serialized = serde_json::to_string(&medium).unwrap();
+        assert_eq!(serialized, "\"medium\"");
+
+        let high = FlagSeverity::High;
+        let serialized = serde_json::to_string(&high).unwrap();
+        assert_eq!(serialized, "\"high\"");
+    }
+
+    #[test]
+    fn test_flag_severity_deserialization() {
+        let low: FlagSeverity = serde_json::from_str("\"low\"").unwrap();
+        assert_eq!(low, FlagSeverity::Low);
+
+        let medium: FlagSeverity = serde_json::from_str("\"medium\"").unwrap();
+        assert_eq!(medium, FlagSeverity::Medium);
+
+        let high: FlagSeverity = serde_json::from_str("\"high\"").unwrap();
+        assert_eq!(high, FlagSeverity::High);
+    }
+
+    #[test]
+    fn test_flag_type_debug() {
+        let flag = FlagType::SameIpTable;
+        let debug_str = format!("{:?}", flag);
+        assert!(debug_str.contains("SameIpTable"));
+    }
+
+    #[test]
+    fn test_flag_severity_debug() {
+        let severity = FlagSeverity::High;
+        let debug_str = format!("{:?}", severity);
+        assert!(debug_str.contains("High"));
+    }
+
+    #[test]
+    fn test_flag_severity_clone() {
+        let original = FlagSeverity::Medium;
+        let cloned = original;
+        assert_eq!(original, cloned);
+    }
+
+    #[test]
+    fn test_flag_type_clone() {
+        let original = FlagType::WinRateAnomaly;
+        let cloned = original.clone();
+        assert_eq!(original, cloned);
+    }
+}
