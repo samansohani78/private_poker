@@ -203,6 +203,12 @@ pub mod mock {
         next_id: Arc<Mutex<i64>>,
     }
 
+    impl Default for MockUserRepository {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     impl MockUserRepository {
         pub fn new() -> Self {
             Self {
@@ -222,7 +228,7 @@ pub mod mock {
         async fn create_user(
             &self,
             username: &str,
-            password_hash: &str,
+            _password_hash: &str,
             display_name: &str,
         ) -> AuthResult<i64> {
             let mut next_id = self.next_id.lock().unwrap();

@@ -123,10 +123,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{
-        body::Body,
-        http::{Request, header::HeaderMap},
-    };
+    use axum::http::{Request, header::HeaderMap};
 
     #[test]
     fn test_get_or_generate_request_id_with_existing() {
@@ -196,8 +193,7 @@ mod tests {
     async fn test_middleware_adds_request_id_to_response() {
         use axum::{
             body::Body,
-            middleware::{self, Next},
-            response::Response,
+            middleware::{self},
             Router,
             routing::get,
         };
@@ -234,8 +230,7 @@ mod tests {
     async fn test_middleware_preserves_existing_request_id() {
         use axum::{
             body::Body,
-            middleware::{self, Next},
-            response::Response,
+            middleware::{self},
             Router,
             routing::get,
         };
