@@ -1,19 +1,148 @@
 //! Bot decision-making logic with difficulty-based behavior.
 
 use super::models::{BotPlayer, DifficultyParams};
-use crate::game::entities::Action;
+use crate::game::entities::{Action, Card};
 use rand::Rng;
+
+/// Configuration for bot decision-making thresholds and multipliers.
+///
+/// These values control bot behavior and can be tuned for different
+/// play styles or difficulty levels.
+#[derive(Debug, Clone)]
+pub struct BotDecisionConfig {
+    /// Easy bot fold threshold (hand strength below this = fold)
+    pub easy_fold_threshold: f32,
+    /// Easy bot raise threshold (hand strength above this = raise)
+    pub easy_raise_threshold: f32,
+    /// Standard bot fold threshold
+    pub standard_fold_threshold: f32,
+    /// Standard bot raise threshold
+    pub standard_raise_threshold: f32,
+    /// TAG bot fold threshold
+    pub tag_fold_threshold: f32,
+    /// TAG bot raise threshold
+    pub tag_raise_threshold: f32,
+    /// Bluff size multiplier (as fraction of pot)
+    pub bluff_size_multiplier: f32,
+    /// Pot odds bonus threshold
+    pub pot_odds_bonus_threshold: f32,
+    /// Pot odds bonus value
+    pub pot_odds_bonus_value: f32,
+    /// Base call probability for medium hands
+    pub base_call_probability: f32,
+    /// Aggression factor divisor for call probability
+    pub call_aggression_divisor: f32,
+    /// Base raise probability for strong hands
+    pub base_raise_probability: f32,
+    /// Aggression factor divisor for raise probability
+    pub raise_aggression_divisor: f32,
+    /// Passive bot raise multiplier
+    pub passive_raise_multiplier: f32,
+    /// Moderate bot raise multiplier
+    pub moderate_raise_multiplier: f32,
+    /// Aggressive bot raise multiplier
+    pub aggressive_raise_multiplier: f32,
+    /// Raise variance range (±percentage)
+    pub raise_variance: f32,
+    /// Late position bonus (button/cutoff)
+    pub late_position_bonus: f32,
+    /// Middle position bonus
+    pub middle_position_bonus: f32,
+    /// Early-middle position penalty
+    pub early_middle_position_penalty: f32,
+    /// UTG (under the gun) penalty
+    pub utg_position_penalty: f32,
+}
+
+impl Default for BotDecisionConfig {
+    fn default() -> Self {
+        Self {
+            // Fold/raise thresholds by difficulty
+            easy_fold_threshold: 0.08,
+            easy_raise_threshold: 0.20,
+            standard_fold_threshold: 0.12,
+            standard_raise_threshold: 0.28,
+            tag_fold_threshold: 0.18,
+            tag_raise_threshold: 0.33,
+            // Bluffing
+            bluff_size_multiplier: 1.5,
+            // Pot odds
+            pot_odds_bonus_threshold: 0.25,
+            pot_odds_bonus_value: 0.2,
+            // Calling
+            base_call_probability: 0.3,
+            call_aggression_divisor: 5.0,
+            // Raising
+            base_raise_probability: 0.4,
+            raise_aggression_divisor: 4.0,
+            // Raise sizing
+            passive_raise_multiplier: 2.0,
+            moderate_raise_multiplier: 2.5,
+            aggressive_raise_multiplier: 3.0,
+            raise_variance: 0.2,
+            // Position adjustments
+            late_position_bonus: 0.08,
+            middle_position_bonus: 0.04,
+            early_middle_position_penalty: -0.03,
+            utg_position_penalty: -0.05,
+        }
+    }
+}
+
+/// Context for bot decision making
+///
+/// Encapsulates all information needed to make a poker decision,
+/// reducing parameter count and improving testability.
+#[derive(Debug, Clone)]
+pub struct BotDecisionContext<'a> {
+    /// Bot's hole cards
+    pub hole_cards: &'a [Card],
+
+    /// Community board cards
+    pub board_cards: &'a [Card],
+
+    /// Current pot size
+    pub pot_size: u32,
+
+    /// Current bet amount to call
+    pub current_bet: u32,
+
+    /// Bot's remaining chips
+    pub bot_chips: u32,
+
+    /// Whether the bot can check (no bet to call)
+    pub can_check: bool,
+
+    /// Bot's position (0=button, 1=SB, 2=BB, etc.)
+    pub position: Option<usize>,
+
+    /// Number of players still in the hand
+    pub players_remaining: usize,
+}
 
 /// Bot decision maker
 pub struct BotDecisionMaker {
     /// Random number generator
     rng: rand::rngs::ThreadRng,
+    /// Configuration for decision-making
+    config: BotDecisionConfig,
 }
 
 impl BotDecisionMaker {
-    /// Create a new decision maker
+    /// Create a new decision maker with default config
     pub fn new() -> Self {
-        Self { rng: rand::rng() }
+        Self {
+            rng: rand::rng(),
+            config: BotDecisionConfig::default(),
+        }
+    }
+
+    /// Create a new decision maker with custom config
+    pub fn with_config(config: BotDecisionConfig) -> Self {
+        Self {
+            rng: rand::rng(),
+            config,
+        }
     }
 
     /// Decide bot action based on difficulty and game state
@@ -27,42 +156,30 @@ impl BotDecisionMaker {
     /// * `current_bet` - Current bet to call
     /// * `bot_chips` - Bot's current chip count
     /// * `can_check` - Whether bot can check
-    /// * `position` - Optional position (0=button, 1=SB, 2=BB, etc.). None defaults to middle position.
-    /// * `players_remaining` - Number of players still in the hand (for pot odds calculation)
+    /// * `ctx` - Decision context with game state
     ///
     /// # Returns
     ///
     /// * `Action` - Bot's chosen action
-    #[allow(clippy::too_many_arguments)]
-    pub fn decide_action(
-        &mut self,
-        bot: &BotPlayer,
-        hole_cards: &[crate::game::entities::Card],
-        board_cards: &[crate::game::entities::Card],
-        pot_size: u32,
-        current_bet: u32,
-        bot_chips: u32,
-        can_check: bool,
-        position: Option<usize>,
-        players_remaining: usize,
-    ) -> Action {
+    pub fn decide_action(&mut self, bot: &BotPlayer, ctx: &BotDecisionContext) -> Action {
         let params = &bot.params;
 
         // Estimate hand strength
-        let mut hand_strength = self.estimate_hand_strength(hole_cards, board_cards);
+        let mut hand_strength = self.estimate_hand_strength(ctx.hole_cards, ctx.board_cards);
 
         // Apply position modifier (late position can play slightly weaker hands)
-        let position_modifier = self.calculate_position_modifier(position, players_remaining);
+        let position_modifier =
+            self.calculate_position_modifier(ctx.position, ctx.players_remaining);
         hand_strength = (hand_strength + position_modifier).clamp(0.0, 1.0);
 
         // All-in if critically short-stacked
-        if bot_chips <= current_bet {
+        if ctx.bot_chips <= ctx.current_bet {
             return Action::AllIn;
         }
 
         // Calculate pot odds if there's a bet to call
-        let pot_odds = if current_bet > 0 && !can_check {
-            self.calculate_pot_odds(pot_size, current_bet)
+        let pot_odds = if ctx.current_bet > 0 && !ctx.can_check {
+            self.calculate_pot_odds(ctx.pot_size, ctx.current_bet)
         } else {
             0.0 // No odds calculation needed if we can check for free
         };
@@ -74,20 +191,29 @@ impl BotDecisionMaker {
 
         // Adjust thresholds based on difficulty (VPIP determines how selective)
         let (fold_threshold, raise_threshold) = match params.vpip {
-            v if v > 0.40 => (0.08, 0.20), // Easy: plays almost anything, raises at 0.20+
-            v if v > 0.25 => (0.12, 0.28), // Standard: selective, raises at 0.28+
-            _ => (0.18, 0.33),             // TAG: very selective, raises at 0.33+ (high pairs)
+            v if v > 0.40 => (
+                self.config.easy_fold_threshold,
+                self.config.easy_raise_threshold,
+            ),
+            v if v > 0.25 => (
+                self.config.standard_fold_threshold,
+                self.config.standard_raise_threshold,
+            ),
+            _ => (
+                self.config.tag_fold_threshold,
+                self.config.tag_raise_threshold,
+            ),
         };
 
         // Fold weak hands unless can check for free
         if hand_strength < fold_threshold {
-            if can_check {
+            if ctx.can_check {
                 return Action::Check;
             }
             // Sometimes bluff with weak hands
             if params.bluffs && self.rng.random_bool(params.bluff_frequency as f64) {
-                let bluff_size = (pot_size as f32 * 1.5) as u32;
-                return if bot_chips <= bluff_size {
+                let bluff_size = (ctx.pot_size as f32 * self.config.bluff_size_multiplier) as u32;
+                return if ctx.bot_chips <= bluff_size {
                     Action::AllIn
                 } else {
                     Action::Raise(Some(bluff_size))
@@ -98,16 +224,22 @@ impl BotDecisionMaker {
 
         // Medium strength hands: play based on aggression and pot odds
         if hand_strength < raise_threshold {
-            if can_check {
+            if ctx.can_check {
                 return Action::Check;
             }
 
             // Use pot odds to inform decision
             // If pot odds are good (high odds), more likely to call even with medium hands
-            let pot_odds_bonus = if pot_odds > 0.25 { 0.2 } else { 0.0 };
+            let pot_odds_bonus = if pot_odds > self.config.pot_odds_bonus_threshold {
+                self.config.pot_odds_bonus_value
+            } else {
+                0.0
+            };
 
             // Call or fold based on aggression (aggressive bots call more)
-            let call_probability = 0.3 + (params.aggression_factor / 5.0) + pot_odds_bonus; // 0.4 to 1.1
+            let call_probability = self.config.base_call_probability
+                + (params.aggression_factor / self.config.call_aggression_divisor)
+                + pot_odds_bonus;
             if self.rng.random_bool(call_probability.min(1.0) as f64) {
                 return Action::Call;
             }
@@ -115,16 +247,17 @@ impl BotDecisionMaker {
         }
 
         // Strong hands (>= raise_threshold): raise aggressively
-        let raise_probability = 0.4 + (params.aggression_factor / 4.0); // 0.525 to 1.15 (clamped to 1.0)
+        let raise_probability = self.config.base_raise_probability
+            + (params.aggression_factor / self.config.raise_aggression_divisor);
         if self.rng.random_bool(raise_probability.min(1.0) as f64) {
             let raise_amount =
-                self.calculate_raise_amount(params, pot_size, current_bet, bot_chips);
-            if bot_chips <= raise_amount {
+                self.calculate_raise_amount(params, ctx.pot_size, ctx.current_bet, ctx.bot_chips);
+            if ctx.bot_chips <= raise_amount {
                 Action::AllIn
             } else {
                 Action::Raise(Some(raise_amount))
             }
-        } else if can_check {
+        } else if ctx.can_check {
             // Slow-play strong hands occasionally
             Action::Check
         } else {
@@ -187,13 +320,15 @@ impl BotDecisionMaker {
     ) -> u32 {
         // Raise size varies by aggression
         let base_multiplier = match params.aggression_factor {
-            x if x < 1.0 => 2.0, // Passive: small raises
-            x if x < 2.0 => 2.5, // Moderate: standard raises
-            _ => 3.0,            // Aggressive: large raises
+            x if x < 1.0 => self.config.passive_raise_multiplier,
+            x if x < 2.0 => self.config.moderate_raise_multiplier,
+            _ => self.config.aggressive_raise_multiplier,
         };
 
-        // Add randomness (±20%)
-        let variance = self.rng.random_range(-0.2..=0.2);
+        // Add randomness (±variance%)
+        let variance = self
+            .rng
+            .random_range(-self.config.raise_variance..=self.config.raise_variance);
         let multiplier = base_multiplier * (1.0 + variance);
 
         let raise_amount = ((pot_size + current_bet) as f32 * multiplier) as u32;
@@ -254,11 +389,11 @@ impl BotDecisionMaker {
         let relative_pos = pos as f32 / players_remaining as f32;
 
         match relative_pos {
-            x if x < 0.2 => 0.08,  // Button, cutoff: +0.08 (can play J-9s, A-5s)
-            x if x < 0.4 => 0.04,  // Middle position: +0.04
-            x if x < 0.6 => 0.0,   // Early-middle: neutral
-            x if x < 0.8 => -0.03, // Early position: -0.03 (fold marginal hands)
-            _ => -0.05,            // UTG (under the gun): -0.05 (very tight)
+            x if x < 0.2 => self.config.late_position_bonus,
+            x if x < 0.4 => self.config.middle_position_bonus,
+            x if x < 0.6 => 0.0, // Early-middle: neutral
+            x if x < 0.8 => self.config.early_middle_position_penalty,
+            _ => self.config.utg_position_penalty,
         }
     }
 
@@ -336,6 +471,30 @@ mod tests {
     use crate::game::entities::{Card, Suit};
     use crate::table::config::BotDifficulty;
 
+    // Helper to create a test context
+    #[allow(clippy::too_many_arguments)]
+    fn make_ctx<'a>(
+        hole_cards: &'a [Card],
+        board_cards: &'a [Card],
+        pot_size: u32,
+        current_bet: u32,
+        bot_chips: u32,
+        can_check: bool,
+        position: Option<usize>,
+        players_remaining: usize,
+    ) -> BotDecisionContext<'a> {
+        BotDecisionContext {
+            hole_cards,
+            board_cards,
+            pot_size,
+            current_bet,
+            bot_chips,
+            can_check,
+            position,
+            players_remaining,
+        }
+    }
+
     #[test]
     fn test_easy_bot_is_passive() {
         let mut decision_maker = BotDecisionMaker::new();
@@ -348,17 +507,8 @@ mod tests {
         let mut raise_count = 0;
         let trials = 100;
         for _ in 0..trials {
-            let action = decision_maker.decide_action(
-                &create_test_bot(BotDifficulty::Easy),
-                &hole_cards,
-                &board_cards,
-                100,
-                10,
-                1000,
-                false,
-                Some(0), // Button position
-                6,       // 6 players
-            );
+            let ctx = make_ctx(&hole_cards, &board_cards, 100, 10, 1000, false, Some(0), 6);
+            let action = decision_maker.decide_action(&create_test_bot(BotDifficulty::Easy), &ctx);
             if matches!(action, Action::Raise(_) | Action::AllIn) {
                 raise_count += 1;
             }
@@ -387,17 +537,8 @@ mod tests {
         let mut raise_count = 0;
         let trials = 100;
         for _ in 0..trials {
-            let action = decision_maker.decide_action(
-                &create_test_bot(BotDifficulty::Tag),
-                &hole_cards,
-                &board_cards,
-                100,
-                10,
-                1000,
-                false,
-                Some(0), // Button position
-                6,       // 6 players
-            );
+            let ctx = make_ctx(&hole_cards, &board_cards, 100, 10, 1000, false, Some(0), 6);
+            let action = decision_maker.decide_action(&create_test_bot(BotDifficulty::Tag), &ctx);
             if matches!(action, Action::Raise(_) | Action::AllIn) {
                 raise_count += 1;
             }
@@ -424,17 +565,8 @@ mod tests {
         let mut fold_count = 0;
         let trials = 500; // Increased for statistical reliability
         for _ in 0..trials {
-            let action = decision_maker.decide_action(
-                &create_test_bot(BotDifficulty::Tag),
-                &hole_cards,
-                &board_cards,
-                100,
-                10,
-                1000,
-                false,   // can't check
-                Some(5), // UTG (early position) - no bonus for weak hands
-                6,       // 6 players
-            );
+            let ctx = make_ctx(&hole_cards, &board_cards, 100, 10, 1000, false, Some(5), 6);
+            let action = decision_maker.decide_action(&create_test_bot(BotDifficulty::Tag), &ctx);
             if matches!(action, Action::Fold) {
                 fold_count += 1;
             }
@@ -462,17 +594,8 @@ mod tests {
         let mut fold_count = 0;
         let trials = 100;
         for _ in 0..trials {
-            let action = decision_maker.decide_action(
-                &create_test_bot(BotDifficulty::Easy),
-                &hole_cards,
-                &board_cards,
-                100,
-                10,
-                1000,
-                false,   // can't check
-                Some(0), // Button position
-                6,       // 6 players
-            );
+            let ctx = make_ctx(&hole_cards, &board_cards, 100, 10, 1000, false, Some(0), 6);
+            let action = decision_maker.decide_action(&create_test_bot(BotDifficulty::Easy), &ctx);
             if matches!(action, Action::Fold) {
                 fold_count += 1;
             }
@@ -501,17 +624,9 @@ mod tests {
         // From button (late position): should play sometimes
         let mut plays_button = 0;
         for _ in 0..1000 {
-            let action = decision_maker.decide_action(
-                &create_test_bot(BotDifficulty::Standard),
-                &hole_cards,
-                &board_cards,
-                100,
-                20,
-                1000,
-                false,
-                Some(0), // Button
-                6,
-            );
+            let ctx = make_ctx(&hole_cards, &board_cards, 100, 20, 1000, false, Some(0), 6);
+            let action =
+                decision_maker.decide_action(&create_test_bot(BotDifficulty::Standard), &ctx);
             if !matches!(action, Action::Fold) {
                 plays_button += 1;
             }
@@ -520,17 +635,9 @@ mod tests {
         // From UTG (early position): should fold almost always
         let mut plays_utg = 0;
         for _ in 0..1000 {
-            let action = decision_maker.decide_action(
-                &create_test_bot(BotDifficulty::Standard),
-                &hole_cards,
-                &board_cards,
-                100,
-                20,
-                1000,
-                false,
-                Some(5), // UTG (early position)
-                6,
-            );
+            let ctx = make_ctx(&hole_cards, &board_cards, 100, 20, 1000, false, Some(5), 6);
+            let action =
+                decision_maker.decide_action(&create_test_bot(BotDifficulty::Standard), &ctx);
             if !matches!(action, Action::Fold) {
                 plays_utg += 1;
             }
@@ -554,15 +661,24 @@ mod tests {
         // Test various pot odds scenarios
         // Good pot odds: $100 pot, $20 to call = 100/120 = 0.833 (5:1)
         let odds1 = decision_maker.calculate_pot_odds(100, 20);
-        assert!((odds1 - 0.833).abs() < 0.01, "Should calculate 0.833 for 100/20");
+        assert!(
+            (odds1 - 0.833).abs() < 0.01,
+            "Should calculate 0.833 for 100/20"
+        );
 
         // Medium pot odds: $100 pot, $50 to call = 100/150 = 0.667 (2:1)
         let odds2 = decision_maker.calculate_pot_odds(100, 50);
-        assert!((odds2 - 0.667).abs() < 0.01, "Should calculate 0.667 for 100/50");
+        assert!(
+            (odds2 - 0.667).abs() < 0.01,
+            "Should calculate 0.667 for 100/50"
+        );
 
         // Bad pot odds: $50 pot, $100 to call = 50/150 = 0.333 (0.5:1)
         let odds3 = decision_maker.calculate_pot_odds(50, 100);
-        assert!((odds3 - 0.333).abs() < 0.01, "Should calculate 0.333 for 50/100");
+        assert!(
+            (odds3 - 0.333).abs() < 0.01,
+            "Should calculate 0.333 for 50/100"
+        );
 
         // Free to call: $100 pot, $0 to call = 1.0 (infinite odds)
         let odds4 = decision_maker.calculate_pot_odds(100, 0);

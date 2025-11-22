@@ -1,2 +1,39 @@
-target
-*.proptest-regressions
+# Rust build artifacts
+target/
+Cargo.lock
+*.proptest-regressions/
+
+# Environment files (sensitive!)
+.env
+.env.local
+.env.*.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# Coverage reports
+*.profraw
+*.profdata
+target/llvm-cov/
+target/coverage/
+
+# Benchmarking
+target/criterion/
+
+# Temporary files
+tmp/
+temp/
+*.tmp

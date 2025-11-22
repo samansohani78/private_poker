@@ -8,9 +8,14 @@ use std::time::Duration;
 
 pub mod config;
 pub mod repository;
+pub mod timeouts;
 
 pub use config::DatabaseConfig;
-pub use repository::{UserRepository, SessionRepository, WalletRepository, PgUserRepository};
+pub use repository::{PgUserRepository, SessionRepository, UserRepository, WalletRepository};
+pub use timeouts::{
+    DEFAULT_QUERY_TIMEOUT, DEFAULT_TRANSACTION_TIMEOUT, LONG_OPERATION_TIMEOUT, TimeoutError,
+    TimeoutResult, with_default_timeout, with_long_timeout, with_timeout,
+};
 
 /// Database connection pool wrapper
 #[derive(Clone)]

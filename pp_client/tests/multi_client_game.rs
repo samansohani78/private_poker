@@ -264,7 +264,10 @@ async fn test_five_clients_complete_game() -> Result<()> {
     // Check that players joined
     if let Some(latest_view) = views.last() {
         println!("   Final player count: {}", latest_view.players.len());
-        println!("   Blinds: {}/{}", latest_view.blinds.small, latest_view.blinds.big);
+        println!(
+            "   Blinds: {}/{}",
+            latest_view.blinds.small, latest_view.blinds.big
+        );
         println!("   Pot size: {}", latest_view.pot.size);
         println!("   Board cards: {}", latest_view.board.len());
 
@@ -364,9 +367,7 @@ async fn test_game_progresses_with_actions() -> Result<()> {
         // Join table
         let join_cmd = ClientCommand::Join { buy_in: 1000 };
         let join_json = serde_json::to_string(&join_cmd)?;
-        write
-            .send(Message::Text(join_json.into()))
-            .await?;
+        write.send(Message::Text(join_json.into())).await?;
 
         sleep(Duration::from_millis(300)).await;
     }

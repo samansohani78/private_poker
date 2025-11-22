@@ -81,11 +81,14 @@ pub struct TableActor {
     /// Is table closed
     is_closed: bool,
 
-    /// Last top-up times (user_id -> hand_count)
+    /// Last top-up times (`user_id` -> `hand_count`)
     top_up_tracker: HashMap<i64, u32>,
 
     /// Current hand count
     hand_count: u32,
+
+    /// Subscribers for state change notifications (for efficient WebSocket updates)
+    subscribers: HashMap<i64, mpsc::Sender<super::messages::StateChangeNotification>>,
 }
 
 impl TableActor {
@@ -128,6 +131,7 @@ impl TableActor {
             is_closed: false,
             top_up_tracker: HashMap::new(),
             hand_count: 0,
+            subscribers: HashMap::new(),
         };
 
         let handle = TableHandle::new(sender, id);
@@ -273,12 +277,43 @@ impl TableActor {
                 self.tick().await;
             }
 
-            TableMessage::ProcessBotTurn => {
-                self.handle_bot_turns().await;
+            TableMessage::Subscribe { user_id, sender } => {
+                self.subscribers.insert(user_id, sender);
+                log::debug!(
+                    "User {} subscribed to table {} state changes",
+                    user_id,
+                    self.id
+                );
+            }
+
+            TableMessage::Unsubscribe { user_id } => {
+                self.subscribers.remove(&user_id);
+                log::debug!(
+                    "User {} unsubscribed from table {} state changes",
+                    user_id,
+                    self.id
+                );
             }
         }
 
         Ok(())
+    }
+
+    /// Broadcast state change notification to all subscribers
+    fn notify_state_change(&mut self, notification: super::messages::StateChangeNotification) {
+        self.subscribers.retain(|user_id, sender| {
+            match sender.try_send(notification.clone()) {
+                Ok(_) => true, // Keep subscriber
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    log::warn!("Subscriber {} channel full, dropping notification", user_id);
+                    true // Keep subscriber but drop this notification
+                }
+                Err(mpsc::error::TrySendError::Closed(_)) => {
+                    log::debug!("Subscriber {} disconnected, removing", user_id);
+                    false // Remove subscriber
+                }
+            }
+        });
     }
 
     /// Handle join table request
@@ -303,7 +338,8 @@ impl TableActor {
                         Err(_) => {
                             log::error!("Invalid passphrase hash format for table {}", self.id);
                             return TableResponse::Error(
-                                "Internal server error: invalid passphrase configuration".to_string(),
+                                "Internal server error: invalid passphrase configuration"
+                                    .to_string(),
                             );
                         }
                     };
@@ -390,6 +426,11 @@ impl TableActor {
                             username,
                             self.id,
                             buy_in_amount
+                        );
+
+                        // Notify subscribers that player list changed
+                        self.notify_state_change(
+                            super::messages::StateChangeNotification::PlayerListChanged,
                         );
 
                         TableResponse::Success
@@ -488,6 +529,12 @@ impl TableActor {
                             self.id,
                             chip_count
                         );
+
+                        // Notify subscribers that player list changed
+                        self.notify_state_change(
+                            super::messages::StateChangeNotification::PlayerListChanged,
+                        );
+
                         TableResponse::Success
                     }
                     Err(e) => TableResponse::Error(format!("Transfer failed: {}", e)),
@@ -509,7 +556,9 @@ impl TableActor {
 
         // Verify user is actually a player (not just a spectator)
         if !self.state.contains_player(&username) {
-            return TableResponse::Error("You must be seated at the table to take actions".to_string());
+            return TableResponse::Error(
+                "You must be seated at the table to take actions".to_string(),
+            );
         }
 
         // Validate it's the user's turn
@@ -523,7 +572,11 @@ impl TableActor {
 
         // Apply action to game state
         match self.state.take_action(&username, action) {
-            Ok(_) => TableResponse::Success,
+            Ok(_) => {
+                // Notify all subscribers that state changed
+                self.notify_state_change(super::messages::StateChangeNotification::StateChanged);
+                TableResponse::Success
+            }
             Err(e) => TableResponse::Error(format!("Invalid action: {:?}", e)),
         }
     }
@@ -623,6 +676,12 @@ impl TableActor {
                 // Store mapping
                 self.user_mapping.insert(user_id, poker_username.clone());
                 self.username_mapping.insert(poker_username, user_id);
+
+                // Notify subscribers that player list changed (spectator added)
+                self.notify_state_change(
+                    super::messages::StateChangeNotification::PlayerListChanged,
+                );
+
                 TableResponse::Success
             }
             Err(e) => TableResponse::Error(format!("Failed to spectate: {:?}", e)),
@@ -645,6 +704,12 @@ impl TableActor {
                 // Remove mappings
                 self.user_mapping.remove(&user_id);
                 self.username_mapping.remove(&username);
+
+                // Notify subscribers that player list changed (spectator removed)
+                self.notify_state_change(
+                    super::messages::StateChangeNotification::PlayerListChanged,
+                );
+
                 TableResponse::Success
             }
             Err(e) => TableResponse::Error(format!("Failed to stop spectating: {:?}", e)),
@@ -795,8 +860,7 @@ impl TableActor {
                                         (None, 2) // Default to heads-up if no view
                                     };
 
-                                let action = decision_maker.decide_action(
-                                    &bot_player,
+                                let ctx = crate::bot::decision::BotDecisionContext {
                                     hole_cards,
                                     board_cards,
                                     pot_size,
@@ -804,8 +868,9 @@ impl TableActor {
                                     bot_chips,
                                     can_check,
                                     position,
-                                    players_in_hand,
-                                );
+                                    players_remaining: players_in_hand,
+                                };
+                                let action = decision_maker.decide_action(&bot_player, &ctx);
 
                                 log::debug!(
                                     "Bot {} ({:?}) at position {:?} taking action: {:?}",
@@ -815,6 +880,11 @@ impl TableActor {
                                     action
                                 );
                                 let _ = self.state.take_action(&next_username, action);
+
+                                // Notify subscribers that state changed after bot action
+                                self.notify_state_change(
+                                    super::messages::StateChangeNotification::StateChanged,
+                                );
                             } else {
                                 // Fallback: check or fold
                                 self.take_fallback_action(&next_username, &action_choices)
@@ -875,6 +945,9 @@ impl TableActor {
             self.hand_count += 1;
             log::debug!("Table {} hand {} completed", self.id, self.hand_count);
         }
+
+        // Notify subscribers that state changed after tick
+        self.notify_state_change(super::messages::StateChangeNotification::StateChanged);
 
         // Process bot turns if needed
         self.handle_bot_turns().await;

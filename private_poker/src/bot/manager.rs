@@ -1,4 +1,5 @@
 //! Bot manager for automatic bot spawning and management.
+#![allow(clippy::needless_raw_string_hashes)]
 
 use super::models::{BotConfig, BotPlayer, BotTelemetry};
 use crate::table::config::TableConfig;

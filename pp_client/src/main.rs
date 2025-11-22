@@ -170,7 +170,7 @@ async fn run(args: Args) -> Result<()> {
             selected_table.name.clone(),
             selected_table.id,
             api_client,
-            initial_view
+            initial_view,
         );
 
         let result = tui_app.run(ws_url, terminal).await;

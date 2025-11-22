@@ -6,6 +6,9 @@
 /// TCP client for connecting to a poker server.
 pub mod client;
 
+/// Network error types for serialization and protocol operations.
+pub mod errors;
+
 /// Message types for client-server communication protocol.
 pub mod messages;
 

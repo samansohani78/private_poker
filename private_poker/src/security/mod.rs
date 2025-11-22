@@ -30,7 +30,7 @@
 //! use std::sync::Arc;
 //!
 //! #[tokio::main]
-//! async fn main() -> Result<(), String> {
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     // Example: Create database connection
 //!     # let config = private_poker::db::DatabaseConfig {
 //!     #     database_url: "postgres://localhost/test".to_string(),
@@ -40,7 +40,7 @@
 //!     #     idle_timeout_secs: 300,
 //!     #     max_lifetime_secs: 1800,
 //!     # };
-//!     # let db = Database::new(&config).await.map_err(|e| e.to_string())?;
+//!     # let db = Database::new(&config).await?;
 //!     let db_pool = Arc::new(db.pool().clone());
 //!
 //!     // Rate limiting
@@ -66,11 +66,13 @@
 //! ```
 
 pub mod anti_collusion;
+pub mod errors;
 pub mod rate_limiter;
 pub mod seat_randomizer;
 
 pub use anti_collusion::{
-    AntiCollusionDetector, CollusionFlag, FlagSeverity, FlagType, IpTableRestrictions,
+    AntiCollusionDetector, CollusionFlag, FlagSeverity, FlagType, IpTableRestrictions, normalize_ip,
 };
+pub use errors::{AntiCollusionError, AntiCollusionResult, RateLimitError, RateLimiterResult};
 pub use rate_limiter::{RateLimitConfig, RateLimitResult, RateLimiter};
 pub use seat_randomizer::SeatRandomizer;

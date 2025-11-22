@@ -1,4 +1,5 @@
 //! Wallet manager implementation with double-entry ledger and escrow.
+#![allow(clippy::needless_raw_string_hashes)]
 
 use super::{
     errors::{WalletError, WalletResult},
@@ -200,30 +201,27 @@ impl WalletManager {
             EntryDirection::Debit,
             EntryType::BuyIn,
             idempotency_key.clone(),
-            Some(format!("Buy-in to table {}", table_id)),
+            Some(format!("Buy-in to table {table_id}")),
         )
         .await?;
 
         // Credit table escrow (create if doesn't exist)
+        // Fixed: Use single atomic operation to insert/update and return NEW balance
         let escrow_row = sqlx::query(
-            "INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0)
-             ON CONFLICT (table_id) DO UPDATE SET balance = table_escrows.balance
+            "INSERT INTO table_escrows (table_id, balance, updated_at)
+             VALUES ($1, $2, NOW())
+             ON CONFLICT (table_id)
+             DO UPDATE SET
+                balance = table_escrows.balance + EXCLUDED.balance,
+                updated_at = NOW()
              RETURNING balance",
         )
         .bind(table_id)
+        .bind(amount)
         .fetch_one(&mut *tx)
         .await?;
 
-        let escrow_balance: i64 = escrow_row.get("balance");
-        let new_escrow_balance = escrow_balance + amount;
-
-        sqlx::query(
-            "UPDATE table_escrows SET balance = $1, updated_at = NOW() WHERE table_id = $2",
-        )
-        .bind(new_escrow_balance)
-        .bind(table_id)
-        .execute(&mut *tx)
-        .await?;
+        let _new_escrow_balance: i64 = escrow_row.get("balance");
 
         // Commit transaction
         tx.commit().await?;
@@ -283,10 +281,11 @@ impl WalletManager {
             Some(row) => row.get("balance"),
             None => {
                 // Either escrow doesn't exist or insufficient balance
-                let check_escrow = sqlx::query("SELECT balance FROM table_escrows WHERE table_id = $1")
-                    .bind(table_id)
-                    .fetch_optional(&mut *tx)
-                    .await?;
+                let check_escrow =
+                    sqlx::query("SELECT balance FROM table_escrows WHERE table_id = $1")
+                        .bind(table_id)
+                        .fetch_optional(&mut *tx)
+                        .await?;
 
                 match check_escrow {
                     Some(row) => {
@@ -327,7 +326,7 @@ impl WalletManager {
             EntryDirection::Credit,
             EntryType::CashOut,
             idempotency_key.clone(),
-            Some(format!("Cash-out from table {}", table_id)),
+            Some(format!("Cash-out from table {table_id}")),
         )
         .await?;
 

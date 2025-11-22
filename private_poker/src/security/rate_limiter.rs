@@ -1,5 +1,8 @@
 //! Rate limiting with exponential backoff for security endpoints.
 
+#![allow(clippy::needless_raw_string_hashes)]
+
+use super::errors::{RateLimitError, RateLimiterResult};
 use chrono::{DateTime, Duration, Utc};
 use sqlx::{PgPool, Row};
 use std::{collections::HashMap, sync::Arc};
@@ -156,16 +159,16 @@ impl RateLimiter {
     ///
     /// # Returns
     ///
-    /// * `Result<bool, String>` - Whether action is allowed or error
+    /// * `RateLimiterResult<bool>` - Whether action is allowed or error
     pub async fn check_rate_limit(
         &self,
         endpoint: &str,
         identifier: &str,
-    ) -> Result<RateLimitResult, String> {
+    ) -> RateLimiterResult<RateLimitResult> {
         let config = self
             .configs
             .get(endpoint)
-            .ok_or_else(|| format!("Unknown endpoint: {}", endpoint))?;
+            .ok_or_else(|| RateLimitError::InvalidEndpoint(endpoint.to_string()))?;
 
         let key = format!("{}:{}", endpoint, identifier);
 
@@ -257,8 +260,8 @@ impl RateLimiter {
     ///
     /// # Returns
     ///
-    /// * `Result<(), String>` - Success or error
-    pub async fn record_attempt(&self, endpoint: &str, identifier: &str) -> Result<(), String> {
+    /// * `RateLimiterResult<()>` - Success or error
+    pub async fn record_attempt(&self, endpoint: &str, identifier: &str) -> RateLimiterResult<()> {
         let key = format!("{}:{}", endpoint, identifier);
 
         let mut cache = self.cache.write().await;
@@ -287,7 +290,7 @@ impl RateLimiter {
     ///
     /// * `endpoint` - Endpoint name
     /// * `identifier` - Unique identifier
-    pub async fn reset(&self, endpoint: &str, identifier: &str) -> Result<(), String> {
+    pub async fn reset(&self, endpoint: &str, identifier: &str) -> RateLimiterResult<()> {
         let key = format!("{}:{}", endpoint, identifier);
         self.cache.write().await.remove(&key);
 
@@ -295,8 +298,7 @@ impl RateLimiter {
             .bind(endpoint)
             .bind(identifier)
             .execute(self.pool.as_ref())
-            .await
-            .map_err(|e| format!("Database error: {}", e))?;
+            .await?;
 
         Ok(())
     }
@@ -306,7 +308,7 @@ impl RateLimiter {
         &self,
         endpoint: &str,
         identifier: &str,
-    ) -> Result<RateLimitAttempt, String> {
+    ) -> RateLimiterResult<RateLimitAttempt> {
         let row = sqlx::query(
             r#"
             SELECT attempts, window_start, locked_until
@@ -317,8 +319,7 @@ impl RateLimiter {
         .bind(endpoint)
         .bind(identifier)
         .fetch_optional(self.pool.as_ref())
-        .await
-        .map_err(|e| format!("Database error: {}", e))?;
+        .await?;
 
         if let Some(row) = row {
             Ok(RateLimitAttempt {
@@ -347,7 +348,7 @@ impl RateLimiter {
         endpoint: &str,
         identifier: &str,
         attempt: &RateLimitAttempt,
-    ) -> Result<(), String> {
+    ) -> RateLimiterResult<()> {
         sqlx::query(
             r#"
             INSERT INTO rate_limit_attempts (endpoint, identifier, attempts, window_start, locked_until)
@@ -366,19 +367,19 @@ impl RateLimiter {
         .bind(attempt.locked_until.map(|dt| dt.naive_utc()))
         .execute(self.pool.as_ref())
         .await
-        .map_err(|e| format!("Database error: {}", e))?;
+        ?;
 
         Ok(())
     }
 
     /// Clean up expired rate limit records
-    pub async fn cleanup_expired(&self) -> Result<u64, String> {
+    pub async fn cleanup_expired(&self) -> RateLimiterResult<u64> {
         let result = sqlx::query(
             "DELETE FROM rate_limit_attempts WHERE locked_until < NOW() AND locked_until IS NOT NULL"
         )
         .execute(self.pool.as_ref())
         .await
-        .map_err(|e| format!("Database error: {}", e))?;
+        ?;
 
         Ok(result.rows_affected())
     }

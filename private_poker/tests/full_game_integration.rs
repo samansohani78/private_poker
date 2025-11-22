@@ -16,7 +16,7 @@ use private_poker::{
 #[test]
 fn test_full_game_two_players_fsm_progression() {
     // Test FSM progression through game states
-    let settings = GameSettings::new(10, 20, 1000);
+    let settings = GameSettings::new(1000, 10, 20, 10, 9);
     let mut game = PokerState::from(settings);
 
     // Add two players
@@ -52,7 +52,7 @@ fn test_full_game_two_players_fsm_progression() {
 #[test]
 fn test_full_game_with_flop() {
     // Test progressing to flop
-    let settings = GameSettings::new(10, 20, 1000);
+    let settings = GameSettings::new(1000, 10, 20, 10, 9);
     let mut game = PokerState::from(settings);
 
     let p1 = Username::new("alice");
@@ -77,7 +77,7 @@ fn test_full_game_with_flop() {
 #[test]
 fn test_complete_hand_to_showdown() {
     // Test completing a full hand
-    let settings = GameSettings::new(10, 20, 1000);
+    let settings = GameSettings::new(1000, 10, 20, 10, 9);
     let mut game = PokerState::from(settings);
 
     let p1 = Username::new("alice");
@@ -105,7 +105,7 @@ fn test_complete_hand_to_showdown() {
 
 #[test]
 fn test_three_players_game() {
-    let settings = GameSettings::new(10, 20, 1000);
+    let settings = GameSettings::new(1000, 10, 20, 10, 9);
     let mut game = PokerState::from(settings);
 
     // Add three players
@@ -134,7 +134,7 @@ fn test_three_players_game() {
 
 #[test]
 fn test_four_player_game() {
-    let settings = GameSettings::new(10, 20, 1000);
+    let settings = GameSettings::new(1000, 10, 20, 10, 9);
     let mut game = PokerState::from(settings);
 
     // Add four players
@@ -156,7 +156,7 @@ fn test_four_player_game() {
 
 #[test]
 fn test_max_players_game() {
-    let settings = GameSettings::new(10, 20, 1000);
+    let settings = GameSettings::new(1000, 10, 20, 10, 9);
     let mut game = PokerState::from(settings);
 
     // Add maximum players (10)
@@ -182,7 +182,7 @@ fn test_max_players_game() {
 
 #[test]
 fn test_all_game_states_reachable() {
-    let settings = GameSettings::new(10, 20, 1000);
+    let settings = GameSettings::new(1000, 10, 20, 10, 9);
     let mut game = PokerState::from(settings);
 
     let p1 = Username::new("alice");
@@ -260,7 +260,7 @@ fn test_multiple_hands_comparison() {
 #[test]
 fn test_player_elimination() {
     // Player with low chips
-    let settings = GameSettings::new(10, 20, 50); // Low starting chips
+    let settings = GameSettings::new(50, 10, 20, 10, 9); // Low starting chips
     let mut game = PokerState::from(settings);
 
     let p1 = Username::new("alice");
@@ -284,7 +284,7 @@ fn test_player_elimination() {
 
 #[test]
 fn test_game_with_blind_increases() {
-    let settings = GameSettings::new(10, 20, 1000);
+    let settings = GameSettings::new(1000, 10, 20, 10, 9);
     let mut game = PokerState::from(settings);
 
     let p1 = Username::new("alice");
@@ -307,7 +307,7 @@ fn test_game_with_blind_increases() {
 
 #[test]
 fn test_view_consistency() {
-    let settings = GameSettings::new(10, 20, 1000);
+    let settings = GameSettings::new(1000, 10, 20, 10, 9);
     let mut game = PokerState::from(settings);
 
     let p1 = Username::new("alice");
@@ -334,7 +334,7 @@ fn test_view_consistency() {
 
 #[test]
 fn test_event_generation_and_draining() {
-    let settings = GameSettings::new(10, 20, 1000);
+    let settings = GameSettings::new(1000, 10, 20, 10, 9);
     let mut game = PokerState::from(settings);
 
     let p1 = Username::new("alice");
@@ -380,7 +380,7 @@ fn test_event_generation_and_draining() {
 
 #[test]
 fn test_rapid_state_progression() {
-    let settings = GameSettings::new(10, 20, 1000);
+    let settings = GameSettings::new(1000, 10, 20, 10, 9);
     let mut game = PokerState::from(settings);
 
     let p1 = Username::new("alice");
@@ -404,7 +404,7 @@ fn test_rapid_state_progression() {
 
 #[test]
 fn test_many_sequential_hands() {
-    let settings = GameSettings::new(10, 20, 10000); // High chips for long game
+    let settings = GameSettings::new(10000, 10, 20, 10, 9); // High chips for long game
     let mut game = PokerState::from(settings);
 
     let p1 = Username::new("alice");
@@ -428,7 +428,7 @@ fn test_many_sequential_hands() {
 
 #[test]
 fn test_game_state_idempotency() {
-    let settings = GameSettings::new(10, 20, 1000);
+    let settings = GameSettings::new(1000, 10, 20, 10, 9);
     let mut game = PokerState::from(settings);
 
     let p1 = Username::new("alice");
@@ -448,7 +448,7 @@ fn test_game_state_idempotency() {
 
 #[test]
 fn test_user_management_operations() {
-    let settings = GameSettings::new(10, 20, 1000);
+    let settings = GameSettings::new(1000, 10, 20, 10, 9);
     let mut game = PokerState::from(settings);
 
     // Add user
@@ -468,7 +468,7 @@ fn test_user_management_operations() {
 
 #[test]
 fn test_game_invariants_maintained() {
-    let settings = GameSettings::new(10, 20, 1000);
+    let settings = GameSettings::new(1000, 10, 20, 10, 9);
     let mut game = PokerState::from(settings);
 
     let players = ["alice", "bob", "carol"];

@@ -4,7 +4,9 @@
 //! with database-backed authentication and wallet systems.
 
 mod api;
+mod config;
 mod logging;
+mod metrics;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -14,10 +16,12 @@ use ctrlc::set_handler;
 use pico_args::Arguments;
 use private_poker::{
     auth::AuthManager,
-    db::{Database, DatabaseConfig},
-    table::{BotDifficulty, TableConfig, TableManager, TableSpeed},
+    db::Database,
+    table::{TableConfig, TableManager, TableSpeed},
     wallet::WalletManager,
 };
+
+use config::ServerConfig;
 
 const HELP: &str = "\
 Run a multi-table private poker server
@@ -86,35 +90,44 @@ async fn main() -> Result<(), Error> {
 
     // Initialize structured logging
     logging::init();
-    tracing::info!("Starting multi-table poker server at {}", args.bind);
+
+    // Initialize Prometheus metrics exporter
+    let metrics_addr: SocketAddr = std::env::var("PP_METRICS_BIND")
+        .unwrap_or_else(|_| "127.0.0.1:9090".to_string())
+        .parse()
+        .expect("Invalid PP_METRICS_BIND address");
+
+    if let Err(e) = metrics::init_metrics(metrics_addr) {
+        tracing::warn!(
+            "Failed to initialize metrics: {}. Metrics will not be available.",
+            e
+        );
+    } else {
+        tracing::info!(
+            "Metrics endpoint available at http://{}/metrics",
+            metrics_addr
+        );
+    }
+
+    // Load and validate configuration
+    tracing::info!("Loading configuration from environment...");
+    let config = ServerConfig::from_env(
+        Some(args.bind),
+        Some(args.database_url),
+        Some(args.num_tables),
+    )
+    .map_err(|e| anyhow::anyhow!("Configuration error: {}", e))?;
+
+    config
+        .validate()
+        .map_err(|e| anyhow::anyhow!("Configuration validation failed: {}", e))?;
+
+    tracing::info!("Configuration loaded and validated successfully");
+    tracing::info!("Starting multi-table poker server at {}", config.bind);
 
     // Initialize database
-    tracing::info!("Connecting to database: {}", args.database_url);
-    let db_config = DatabaseConfig {
-        database_url: args.database_url,
-        max_connections: std::env::var("DB_MAX_CONNECTIONS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(100),
-        min_connections: std::env::var("DB_MIN_CONNECTIONS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(5),
-        connection_timeout_secs: std::env::var("DB_CONNECTION_TIMEOUT_SECS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(5),
-        idle_timeout_secs: std::env::var("DB_IDLE_TIMEOUT_SECS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(300),
-        max_lifetime_secs: std::env::var("DB_MAX_LIFETIME_SECS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(1800),
-    };
-
-    let db = Database::new(&db_config)
+    tracing::info!("Connecting to database: {}", config.database.database_url);
+    let db = Database::new(&config.database)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to connect to database: {}", e))?;
 
@@ -125,14 +138,11 @@ async fn main() -> Result<(), Error> {
     let wallet_manager = Arc::new(WalletManager::new(pool.clone()));
     let table_manager = Arc::new(TableManager::new(pool.clone(), wallet_manager.clone()));
 
-    // SECURITY: JWT_SECRET and PASSWORD_PEPPER are REQUIRED
-    // These are critical security parameters - server will not start without them
-    let jwt_secret = std::env::var("JWT_SECRET")
-        .expect("FATAL: JWT_SECRET environment variable must be set! Generate with: openssl rand -hex 32");
-    let pepper = std::env::var("PASSWORD_PEPPER")
-        .expect("FATAL: PASSWORD_PEPPER environment variable must be set! Generate with: openssl rand -hex 16");
-
-    let auth_manager = Arc::new(AuthManager::new(pool.clone(), pepper, jwt_secret));
+    let auth_manager = Arc::new(AuthManager::new(
+        pool.clone(),
+        config.security.password_pepper.clone(),
+        config.security.jwt_secret.clone(),
+    ));
 
     // Load existing tables from database first
     tracing::info!("Loading existing tables from database...");
@@ -145,68 +155,30 @@ async fn main() -> Result<(), Error> {
         }
     }
 
-    tracing::info!("Creating {} new table(s)...", args.num_tables);
-
-    // Parse bot difficulty from env
-    let bot_difficulty = std::env::var("DEFAULT_BOT_DIFFICULTY")
-        .ok()
-        .and_then(|v| match v.to_lowercase().as_str() {
-            "easy" => Some(BotDifficulty::Easy),
-            "standard" => Some(BotDifficulty::Standard),
-            "tag" => Some(BotDifficulty::Tag),
-            _ => None,
-        })
-        .unwrap_or(BotDifficulty::Standard);
+    tracing::info!("Creating {} new table(s)...", config.num_tables);
 
     // Create initial tables
-    for i in 0..args.num_tables {
-        let config = TableConfig {
+    for i in 0..config.num_tables {
+        let table_config = TableConfig {
             name: format!("Table {}", i + 1),
-            max_players: std::env::var("TABLE_MAX_PLAYERS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(9),
-            small_blind: std::env::var("TABLE_SMALL_BLIND")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(10),
-            big_blind: std::env::var("TABLE_BIG_BLIND")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(20),
-            min_buy_in_bb: std::env::var("TABLE_MIN_BUY_IN_BB")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(50),
-            max_buy_in_bb: std::env::var("TABLE_MAX_BUY_IN_BB")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(200),
-            absolute_chip_cap: std::env::var("ABSOLUTE_CHIP_CAP")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(100_000),
-            top_up_cooldown_hands: std::env::var("TABLE_TOP_UP_COOLDOWN_HANDS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(20),
+            max_players: config.table_defaults.max_players,
+            small_blind: config.table_defaults.small_blind,
+            big_blind: config.table_defaults.big_blind,
+            min_buy_in_bb: config.table_defaults.min_buy_in_bb,
+            max_buy_in_bb: config.table_defaults.max_buy_in_bb,
+            absolute_chip_cap: config.table_defaults.absolute_chip_cap,
+            top_up_cooldown_hands: config.table_defaults.top_up_cooldown_hands,
             speed: TableSpeed::Normal,
-            bots_enabled: std::env::var("BOTS_ENABLED")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(true),
-            target_bot_count: std::env::var("TARGET_BOT_COUNT")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(6),
-            bot_difficulty,
+            bots_enabled: config.table_defaults.bots_enabled,
+            target_bot_count: config.table_defaults.target_bot_count,
+            bot_difficulty: config.table_defaults.bot_difficulty,
             is_private: false,
             passphrase_hash: None,
             invite_token: None,
             invite_expires_at: None,
         };
 
-        match table_manager.create_table(config, None).await {
+        match table_manager.create_table(table_config, None).await {
             Ok(table_id) => {
                 tracing::info!("✓ Created table {} with ID {}", i + 1, table_id);
             }
@@ -240,6 +212,28 @@ async fn main() -> Result<(), Error> {
         }
     }
 
+    // Spawn background task for session cleanup
+    // Runs every hour to prevent database bloat from expired sessions
+    let cleanup_auth_manager = auth_manager.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600)); // 1 hour
+        loop {
+            interval.tick().await;
+            match cleanup_auth_manager.cleanup_expired_sessions().await {
+                Ok(count) => {
+                    if count > 0 {
+                        tracing::info!("Cleaned up {} expired session(s)", count);
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Session cleanup failed: {}", e);
+                }
+            }
+        }
+    });
+
+    tracing::info!("Background session cleanup task started (runs every hour)");
+
     // Create API state
     let api_state = api::AppState {
         auth_manager,
@@ -252,14 +246,14 @@ async fn main() -> Result<(), Error> {
     let app = api::create_router(api_state);
 
     // Start HTTP server
-    tracing::info!("Starting HTTP/WebSocket server on {}", args.bind);
-    let listener = tokio::net::TcpListener::bind(args.bind)
+    tracing::info!("Starting HTTP/WebSocket server on {}", config.bind);
+    let listener = tokio::net::TcpListener::bind(config.bind)
         .await
-        .map_err(|e| anyhow::anyhow!("Failed to bind to {}: {}", args.bind, e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to bind to {}: {}", config.bind, e))?;
 
     tracing::info!(
         "Server is running at http://{}. Press Ctrl+C to stop.",
-        args.bind
+        config.bind
     );
 
     axum::serve(listener, app)

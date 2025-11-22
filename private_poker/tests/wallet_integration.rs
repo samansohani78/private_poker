@@ -440,6 +440,81 @@ async fn test_insufficient_funds() {
 }
 
 #[tokio::test]
+async fn test_escrow_upsert_returns_correct_balance() {
+    // Regression test for H1: Escrow upsert bug
+    // Verifies that multiple transfers to same escrow accumulate correctly
+    let (wallet_mgr, auth_mgr, pool) = setup_managers().await;
+    let username = "test_escrow_upsert";
+    let table_id = 994;
+    cleanup_user(&pool, username).await;
+    cleanup_table_escrow(&pool, table_id).await;
+
+    // Register user and claim faucet
+    let user = auth_mgr
+        .register(RegisterRequest {
+            username: username.to_string(),
+            password: "SecurePass123!".to_string(),
+            display_name: username.to_string(),
+            email: None,
+        })
+        .await
+        .expect("Registration should succeed");
+
+    wallet_mgr
+        .claim_faucet(user.id)
+        .await
+        .expect("Faucet claim should succeed");
+
+    // First transfer - creates escrow
+    wallet_mgr
+        .transfer_to_escrow(user.id, table_id, 100, unique_key("upsert1"))
+        .await
+        .expect("First transfer should succeed");
+
+    let escrow_after_first = wallet_mgr
+        .get_escrow(table_id)
+        .await
+        .expect("Should get escrow");
+    assert_eq!(
+        escrow_after_first.balance, 100,
+        "Escrow should have 100 after first transfer"
+    );
+
+    // Second transfer - updates existing escrow (this is where the bug was)
+    wallet_mgr
+        .transfer_to_escrow(user.id, table_id, 200, unique_key("upsert2"))
+        .await
+        .expect("Second transfer should succeed");
+
+    let escrow_after_second = wallet_mgr
+        .get_escrow(table_id)
+        .await
+        .expect("Should get escrow");
+    assert_eq!(
+        escrow_after_second.balance, 300,
+        "Escrow should have 300 (100+200) after second transfer - this verifies the upsert fix"
+    );
+
+    // Third transfer to verify accumulation continues working
+    wallet_mgr
+        .transfer_to_escrow(user.id, table_id, 50, unique_key("upsert3"))
+        .await
+        .expect("Third transfer should succeed");
+
+    let escrow_after_third = wallet_mgr
+        .get_escrow(table_id)
+        .await
+        .expect("Should get escrow");
+    assert_eq!(
+        escrow_after_third.balance, 350,
+        "Escrow should have 350 (100+200+50) after third transfer"
+    );
+
+    cleanup_table_escrow(&pool, table_id).await;
+    cleanup_user(&pool, username).await;
+}
+
+#[tokio::test]
 async fn test_get_transaction_history() {
     let (wallet_mgr, auth_mgr, pool) = setup_managers().await;
     let username = "test_history";

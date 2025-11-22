@@ -3,7 +3,7 @@
 //! This module provides structured logging with request correlation,
 //! performance metrics, and security event tracking.
 
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Initialize structured logging with enhanced features
 ///
@@ -282,7 +282,12 @@ mod tests {
 
     #[test]
     fn test_log_functions_with_special_characters() {
-        log_security_event("login/failure", Some(1), Some("127.0.0.1"), "Failed @ login");
+        log_security_event(
+            "login/failure",
+            Some(1),
+            Some("127.0.0.1"),
+            "Failed @ login",
+        );
         log_performance("db::query", 100, Some("table: users & sessions"));
         log_database_operation("SELECT", "table_with_underscore", 50);
         log_api_request("GET", "/api/path/with/slashes", 200, 50, Some(1));

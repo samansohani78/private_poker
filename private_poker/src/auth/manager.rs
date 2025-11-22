@@ -1,5 +1,7 @@
 //! Authentication manager implementation.
 
+#![allow(clippy::needless_raw_string_hashes)]
+
 use super::{
     errors::{AuthError, AuthResult},
     models::{AccessTokenClaims, LoginRequest, RegisterRequest, SessionTokens, User, UserId},
@@ -46,7 +48,7 @@ impl AuthManager {
         let refresh_token_secs = std::env::var("JWT_REFRESH_TOKEN_EXPIRY")
             .ok()
             .and_then(|v| v.parse::<i64>().ok())
-            .unwrap_or(604800); // 7 days
+            .unwrap_or(604_800); // 7 days
 
         Self {
             pool,
@@ -75,10 +77,10 @@ impl AuthManager {
     /// * `AuthError::WeakPassword` - Password too weak
     pub async fn register(&self, request: RegisterRequest) -> AuthResult<User> {
         // Validate username
-        self.validate_username(&request.username)?;
+        Self::validate_username(&request.username)?;
 
         // Validate password strength
-        self.validate_password(&request.password)?;
+        Self::validate_password(&request.password)?;
 
         // Check if username exists
         let existing_user = sqlx::query("SELECT id FROM users WHERE username = $1")
@@ -207,7 +209,7 @@ impl AuthManager {
                 // 2FA is enabled, verify code
                 let totp_code = request.totp_code.ok_or(AuthError::TwoFactorRequired)?;
                 let secret: String = two_factor_row.get("secret");
-                self.verify_totp(&secret, &totp_code)?;
+                Self::verify_totp(&secret, &totp_code)?;
             }
         }
 
@@ -327,9 +329,25 @@ impl AuthManager {
             return Err(AuthError::SessionExpired);
         }
 
-        // Verify device fingerprint matches
+        // Verify device fingerprint matches (constant-time to prevent timing attacks)
         let stored_fingerprint: String = session_row.get("device_fingerprint");
-        if stored_fingerprint != device_fingerprint {
+        use subtle::ConstantTimeEq;
+
+        // Pad strings to same length for constant-time comparison
+        let stored_bytes = stored_fingerprint.as_bytes();
+        let provided_bytes = device_fingerprint.as_bytes();
+
+        // If lengths differ, still do a comparison to maintain constant time
+        let max_len = stored_bytes.len().max(provided_bytes.len());
+        let mut stored_padded = stored_bytes.to_vec();
+        let mut provided_padded = provided_bytes.to_vec();
+        stored_padded.resize(max_len, 0);
+        provided_padded.resize(max_len, 0);
+
+        let fingerprints_match: bool = stored_padded.ct_eq(&provided_padded).into();
+        let lengths_match = stored_bytes.len() == provided_bytes.len();
+
+        if !fingerprints_match || !lengths_match {
             return Err(AuthError::InvalidRefreshToken);
         }
 
@@ -451,7 +469,7 @@ impl AuthManager {
     }
 
     /// Verify TOTP code
-    fn verify_totp(&self, secret: &str, code: &str) -> AuthResult<()> {
+    fn verify_totp(secret: &str, code: &str) -> AuthResult<()> {
         let totp = TOTP::new(
             Algorithm::SHA1,
             6,
@@ -474,7 +492,7 @@ impl AuthManager {
     }
 
     /// Validate username format
-    fn validate_username(&self, username: &str) -> AuthResult<()> {
+    fn validate_username(username: &str) -> AuthResult<()> {
         let len = username.len();
         if !(3..=20).contains(&len) {
             return Err(AuthError::InvalidUsername(
@@ -492,7 +510,7 @@ impl AuthManager {
     }
 
     /// Validate password strength
-    fn validate_password(&self, password: &str) -> AuthResult<()> {
+    fn validate_password(password: &str) -> AuthResult<()> {
         if password.len() < 8 {
             return Err(AuthError::WeakPassword(
                 "Password must be at least 8 characters".to_string(),
@@ -512,5 +530,34 @@ impl AuthManager {
         }
 
         Ok(())
+    }
+
+    /// Clean up expired sessions from database
+    ///
+    /// Should be called periodically (e.g., every hour) to prevent database bloat.
+    /// Removes all sessions where `expires_at` is in the past.
+    ///
+    /// # Returns
+    ///
+    /// * `AuthResult<usize>` - Number of sessions deleted
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use private_poker::auth::AuthManager;
+    /// # async fn example(auth_manager: AuthManager) {
+    /// // In background task:
+    /// match auth_manager.cleanup_expired_sessions().await {
+    ///     Ok(count) => println!("Cleaned up {} expired sessions", count),
+    ///     Err(e) => eprintln!("Session cleanup failed: {}", e),
+    /// }
+    /// # }
+    /// ```
+    pub async fn cleanup_expired_sessions(&self) -> AuthResult<usize> {
+        let result = sqlx::query("DELETE FROM sessions WHERE expires_at < NOW()")
+            .execute(self.pool.as_ref())
+            .await?;
+
+        Ok(result.rows_affected() as usize)
     }
 }

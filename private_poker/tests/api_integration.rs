@@ -1,3 +1,5 @@
+#![allow(clippy::unreadable_literal)]
+
 //! Integration tests for HTTP REST API and WebSocket endpoints.
 //!
 //! Tests authentication, table management, and WebSocket communication.

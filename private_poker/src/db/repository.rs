@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use sqlx::{PgPool, Row};
 
 use crate::auth::{AuthResult, Session, User};
-use crate::wallet::{WalletResult, Wallet, WalletEntry, TableEscrow, FaucetClaim};
+use crate::wallet::{FaucetClaim, TableEscrow, Wallet, WalletEntry, WalletResult};
 
 /// Trait for user/authentication repository operations
 #[async_trait]
@@ -65,7 +65,11 @@ pub trait WalletRepository: Send + Sync {
     async fn get_wallet(&self, user_id: i64) -> WalletResult<Wallet>;
 
     /// Get or create wallet for user
-    async fn get_or_create_wallet(&self, user_id: i64, initial_balance: i64) -> WalletResult<Wallet>;
+    async fn get_or_create_wallet(
+        &self,
+        user_id: i64,
+        initial_balance: i64,
+    ) -> WalletResult<Wallet>;
 
     /// Update wallet balance
     async fn update_balance(&self, user_id: i64, new_balance: i64) -> WalletResult<()>;
@@ -89,7 +93,7 @@ pub trait WalletRepository: Send + Sync {
     async fn create_faucet_claim(&self, claim: &FaucetClaim) -> WalletResult<i64>;
 }
 
-/// Default PostgreSQL implementation of UserRepository
+/// Default PostgreSQL implementation of `UserRepository`
 pub struct PgUserRepository {
     pool: PgPool,
 }
@@ -124,7 +128,7 @@ impl UserRepository for PgUserRepository {
         let row = sqlx::query(
             "SELECT id, username, display_name, avatar_url, email, country, timezone,
                     tos_version, privacy_version, is_active, is_admin, created_at, last_login
-             FROM users WHERE username = $1"
+             FROM users WHERE username = $1",
         )
         .bind(username)
         .fetch_optional(&self.pool)
@@ -143,7 +147,9 @@ impl UserRepository for PgUserRepository {
             is_active: r.get("is_active"),
             is_admin: r.get("is_admin"),
             created_at: r.get::<chrono::NaiveDateTime, _>("created_at").and_utc(),
-            last_login: r.get::<Option<chrono::NaiveDateTime>, _>("last_login").map(|dt| dt.and_utc()),
+            last_login: r
+                .get::<Option<chrono::NaiveDateTime>, _>("last_login")
+                .map(|dt| dt.and_utc()),
         }))
     }
 
@@ -151,7 +157,7 @@ impl UserRepository for PgUserRepository {
         let row = sqlx::query(
             "SELECT id, username, display_name, avatar_url, email, country, timezone,
                     tos_version, privacy_version, is_active, is_admin, created_at, last_login
-             FROM users WHERE id = $1"
+             FROM users WHERE id = $1",
         )
         .bind(user_id)
         .fetch_optional(&self.pool)
@@ -170,7 +176,9 @@ impl UserRepository for PgUserRepository {
             is_active: r.get("is_active"),
             is_admin: r.get("is_admin"),
             created_at: r.get::<chrono::NaiveDateTime, _>("created_at").and_utc(),
-            last_login: r.get::<Option<chrono::NaiveDateTime>, _>("last_login").map(|dt| dt.and_utc()),
+            last_login: r
+                .get::<Option<chrono::NaiveDateTime>, _>("last_login")
+                .map(|dt| dt.and_utc()),
         }))
     }
 
@@ -284,14 +292,16 @@ pub mod mock {
         async fn test_mock_create_user() {
             let repo = MockUserRepository::new();
 
-            let user_id = repo.create_user("testuser", "hash123", "Test User")
+            let user_id = repo
+                .create_user("testuser", "hash123", "Test User")
                 .await
                 .expect("Failed to create user");
 
             assert_eq!(user_id, 1, "First user should have ID 1");
 
             // Create second user
-            let user_id2 = repo.create_user("testuser2", "hash456", "Test User 2")
+            let user_id2 = repo
+                .create_user("testuser2", "hash456", "Test User 2")
                 .await
                 .expect("Failed to create second user");
 
@@ -307,7 +317,9 @@ pub mod mock {
             assert!(result.is_none(), "Should not find non-existent user");
 
             // Create user
-            repo.create_user("testuser", "hash123", "Test User").await.unwrap();
+            repo.create_user("testuser", "hash123", "Test User")
+                .await
+                .unwrap();
 
             // Now should find user
             let result = repo.find_by_username("testuser").await.unwrap();
@@ -324,7 +336,10 @@ pub mod mock {
             let repo = MockUserRepository::new();
 
             // Create user
-            let user_id = repo.create_user("testuser", "hash123", "Test User").await.unwrap();
+            let user_id = repo
+                .create_user("testuser", "hash123", "Test User")
+                .await
+                .unwrap();
 
             // Find by ID
             let result = repo.find_by_id(user_id).await.unwrap();
@@ -343,7 +358,10 @@ pub mod mock {
         async fn test_mock_update_last_login() {
             let repo = MockUserRepository::new();
 
-            let user_id = repo.create_user("testuser", "hash123", "Test User").await.unwrap();
+            let user_id = repo
+                .create_user("testuser", "hash123", "Test User")
+                .await
+                .unwrap();
 
             // Should not fail
             let result = repo.update_last_login(user_id).await;
@@ -351,14 +369,20 @@ pub mod mock {
 
             // Non-existent user should also succeed (mock implementation)
             let result = repo.update_last_login(999).await;
-            assert!(result.is_ok(), "Update last login for non-existent user should succeed");
+            assert!(
+                result.is_ok(),
+                "Update last login for non-existent user should succeed"
+            );
         }
 
         #[tokio::test]
         async fn test_mock_deactivate_user() {
             let repo = MockUserRepository::new();
 
-            let user_id = repo.create_user("testuser", "hash123", "Test User").await.unwrap();
+            let user_id = repo
+                .create_user("testuser", "hash123", "Test User")
+                .await
+                .unwrap();
 
             // Verify user is active
             let user = repo.find_by_id(user_id).await.unwrap().unwrap();
@@ -369,7 +393,10 @@ pub mod mock {
 
             // Verify user is now inactive
             let user = repo.find_by_id(user_id).await.unwrap().unwrap();
-            assert!(!user.is_active, "User should be inactive after deactivation");
+            assert!(
+                !user.is_active,
+                "User should be inactive after deactivation"
+            );
         }
 
         #[tokio::test]
@@ -411,7 +438,9 @@ pub mod mock {
             for i in 1..=5 {
                 let username = format!("user{}", i);
                 let display_name = format!("User {}", i);
-                repo.create_user(&username, "hash", &display_name).await.unwrap();
+                repo.create_user(&username, "hash", &display_name)
+                    .await
+                    .unwrap();
             }
 
             // Verify all users exist

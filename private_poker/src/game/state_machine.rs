@@ -7,7 +7,6 @@ use enum_dispatch::enum_dispatch;
 use log::error;
 use serde::{Deserialize, Serialize};
 use std::{
-    cmp::{max, min, Ordering},
     collections::{HashMap, HashSet, VecDeque},
     fmt,
     sync::Arc,
@@ -16,17 +15,10 @@ use thiserror::Error;
 
 use super::constants::{DEFAULT_MAX_USERS, MAX_PLAYERS};
 use super::entities::{
-    Action, ActionChoice, ActionChoices, Bet, BetAction, Blinds, Card,
-    DEFAULT_BUY_IN, DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND, Deck,
-    GameView, GameViews, PlayPositions, Player, PlayerCounts, PlayerQueues,
-    PlayerState, PlayerView, Pot, PotView, SeatIndex, Usd, User, Username, Vote,
+    Bet, Blinds, Card, DEFAULT_BUY_IN, DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND, Deck,
+    GameViews, PlayPositions, Player, PlayerCounts, PlayerQueues, Pot, PotView, SeatIndex, Usd,
+    User, Username, Vote,
 };
-
-// Re-export state modules
-pub mod states;
-
-// Re-export for backward compatibility
-pub use states::*;
 
 /// Errors that can occur during user operations
 #[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
@@ -154,39 +146,69 @@ impl GameSettings {
 }
 
 /// Mutable game data shared across all states
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Debug)]
 pub struct GameData {
+    /// Deck of cards. This is instantiated once and reshuffled
+    /// each deal.
+    pub(super) deck: Deck,
     pub blinds: Blinds,
-    pub board: Vec<Card>,
-    pub deck: Deck,
-    pub events: VecDeque<GameEvent>,
-    pub ledger: HashMap<Username, Usd>,
-    pub max_players: usize,
-    pub open_seats: VecDeque<usize>,
-    pub play_positions: PlayPositions,
-    pub player_queues: PlayerQueues,
-    pub players: Vec<Player>,
-    /// Mapping of running votes to users that are for those running votes.
-    pub(crate) votes: HashMap<Vote, HashSet<Username>>,
-    pub(crate) player_counts: PlayerCounts,
-    pub pot: Pot,
-    pub reset_all_money_after_game: bool,
-    pub settings: GameSettings,
     pub spectators: HashSet<User>,
     pub waitlist: VecDeque<User>,
+    pub open_seats: VecDeque<SeatIndex>,
+    pub players: Vec<Player>,
+    /// Community cards shared amongst all players.
+    pub board: Vec<Card>,
+    /// Mapping of running votes to users that are for those running votes.
+    pub(super) votes: HashMap<Vote, HashSet<Username>>,
+    pub(super) player_counts: PlayerCounts,
+    pub pot: Pot,
+    /// Queues of players to do things with at a later point of
+    /// an active game.
+    pub(super) player_queues: PlayerQueues,
+    pub play_positions: PlayPositions,
+    /// Stack of game events that give more insight as to what kind
+    /// of game updates occur due to user actions or game state
+    /// changes.
+    pub(super) events: VecDeque<GameEvent>,
+    /// Mapping of username to money they had when they were
+    /// last connected to the game. This is updated when a
+    /// user is removed/kicked from the game. When a user reconnects,
+    /// the value in here is used as their starting money stack.
+    pub(super) ledger: HashMap<Username, Usd>,
+    /// If this is set, then users voted to reset everyone's
+    /// money, but a game was in progress, so everyone's money
+    /// will be reset after the game is over.
+    pub(super) reset_all_money_after_game: bool,
+    pub(super) settings: GameSettings,
+}
+
+impl Default for GameData {
+    fn default() -> Self {
+        let settings = GameSettings::default();
+        settings.into()
+    }
+}
+
+impl GameData {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
 impl From<GameSettings> for GameData {
     fn from(value: GameSettings) -> Self {
         Self {
-            max_players: value.max_players,
+            deck: Deck::default(),
+            blinds: Blinds {
+                small: value.min_small_blind,
+                big: value.min_big_blind,
+            },
             spectators: HashSet::with_capacity(value.max_users),
             waitlist: VecDeque::with_capacity(value.max_users),
-            open_seats: (0..value.max_players).collect(),
-            blinds: Blinds::new(value.min_small_blind, value.min_big_blind),
+            open_seats: VecDeque::from_iter(0..value.max_players),
             players: Vec::with_capacity(value.max_players),
             board: Vec::with_capacity(5),
-            deck: Deck::new_shuffled(),
             votes: HashMap::with_capacity(2 * value.max_users + 1),
             player_counts: PlayerCounts::default(),
             pot: Pot::new(value.max_players),
@@ -236,12 +258,13 @@ pub struct Game<T> {
 }
 
 /// Shared read-only data that can be reused across all views
-pub(crate) struct SharedViewData {
-    pub blinds: Arc<Blinds>,
-    pub spectators: Arc<HashSet<User>>,
-    pub waitlist: Arc<VecDeque<User>>,
-    pub open_seats: Arc<VecDeque<usize>>,
-    pub board: Arc<Vec<Card>>,
-    pub pot: Arc<PotView>,
-    pub play_positions: Arc<PlayPositions>,
+#[derive(Debug)]
+pub struct SharedViewData {
+    pub(super) blinds: Arc<Blinds>,
+    pub(super) spectators: Arc<HashSet<User>>,
+    pub(super) waitlist: Arc<VecDeque<User>>,
+    pub(super) open_seats: Arc<VecDeque<usize>>,
+    pub(super) board: Arc<Vec<Card>>,
+    pub(super) pot: Arc<PotView>,
+    pub(super) play_positions: Arc<PlayPositions>,
 }

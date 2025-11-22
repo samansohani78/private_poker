@@ -4,18 +4,14 @@
 //! with no chips lost due to rounding errors. All payouts must sum to exactly
 //! the total prize pool.
 
+#![allow(clippy::unreadable_literal)]
+
 use private_poker::tournament::models::PrizeStructure;
 
 #[test]
 fn test_winner_takes_all_conservation() {
     // Test with various player counts and buy-ins
-    let test_cases = vec![
-        (2, 100),
-        (3, 50),
-        (5, 1000),
-        (4, 25),
-        (5, 1),
-    ];
+    let test_cases = vec![(2, 100), (3, 50), (5, 1000), (4, 25), (5, 1)];
 
     for (players, buy_in) in test_cases {
         let structure = PrizeStructure::standard(players, buy_in);
@@ -33,7 +29,10 @@ fn test_winner_takes_all_conservation() {
             1,
             "Winner-takes-all should have 1 payout"
         );
-        assert_eq!(structure.payouts[0], total_pool, "Winner should get full pool");
+        assert_eq!(
+            structure.payouts[0], total_pool,
+            "Winner should get full pool"
+        );
     }
 }
 
@@ -41,12 +40,12 @@ fn test_winner_takes_all_conservation() {
 fn test_sixty_forty_split_conservation() {
     // Test 60/40 split (6-9 players)
     let test_cases = vec![
-        (6, 100),   // 600 pool
-        (7, 50),    // 350 pool
-        (8, 1000),  // 8000 pool
-        (9, 25),    // 225 pool
-        (6, 1),     // 6 pool (edge case)
-        (9, 999),   // 8991 pool (odd number)
+        (6, 100),  // 600 pool
+        (7, 50),   // 350 pool
+        (8, 1000), // 8000 pool
+        (9, 25),   // 225 pool
+        (6, 1),    // 6 pool (edge case)
+        (9, 999),  // 8991 pool (odd number)
     ];
 
     for (players, buy_in) in test_cases {
@@ -70,12 +69,16 @@ fn test_sixty_forty_split_conservation() {
         assert!(
             first_percentage >= 60.0 - tolerance,
             "First place should get ~60% (±{:.1}% for small pools), got {:.2}% (payouts: {:?})",
-            tolerance, first_percentage, structure.payouts
+            tolerance,
+            first_percentage,
+            structure.payouts
         );
         assert!(
             first_percentage <= 60.0 + tolerance,
             "First place should get ~60% (±{:.1}%), got {:.2}% (payouts: {:?})",
-            tolerance, first_percentage, structure.payouts
+            tolerance,
+            first_percentage,
+            structure.payouts
         );
     }
 }
@@ -103,11 +106,7 @@ fn test_fifty_thirty_twenty_split_conservation() {
             players, buy_in, total_pool, payout_sum
         );
 
-        assert_eq!(
-            structure.payouts.len(),
-            3,
-            "50/30/20 should have 3 payouts"
-        );
+        assert_eq!(structure.payouts.len(), 3, "50/30/20 should have 3 payouts");
 
         // Verify percentages (allowing for rounding in third place)
         let first_pct = (structure.payouts[0] as f64 / total_pool as f64) * 100.0;
@@ -136,12 +135,12 @@ fn test_fifty_thirty_twenty_split_conservation() {
 fn test_custom_prize_structure_conservation() {
     // Test custom percentages
     let test_cases = vec![
-        (1000, vec![0.70, 0.30]),                      // 70/30 split
-        (5000, vec![0.50, 0.25, 0.15, 0.10]),          // 4-way split
-        (100, vec![0.40, 0.30, 0.20, 0.10]),           // Even 100 chips
-        (999, vec![0.60, 0.30, 0.10]),                 // Odd pool
-        (1, vec![1.0]),                                // Single chip winner-takes-all
-        (10000, vec![0.45, 0.25, 0.15, 0.10, 0.05]),   // 5-way split
+        (1000, vec![0.70, 0.30]),                    // 70/30 split
+        (5000, vec![0.50, 0.25, 0.15, 0.10]),        // 4-way split
+        (100, vec![0.40, 0.30, 0.20, 0.10]),         // Even 100 chips
+        (999, vec![0.60, 0.30, 0.10]),               // Odd pool
+        (1, vec![1.0]),                              // Single chip winner-takes-all
+        (10000, vec![0.45, 0.25, 0.15, 0.10, 0.05]), // 5-way split
     ];
 
     for (pool, percentages) in test_cases {
@@ -201,10 +200,10 @@ fn test_edge_case_small_pools() {
 fn test_edge_case_large_pools() {
     // Test very large pools to ensure no overflow
     let test_cases = vec![
-        (100, 10000),      // 1M pool
-        (1000, 1000),      // 1M pool
-        (50, 100000),      // 5M pool
-        (10, 1000000),     // 10M pool
+        (100, 10000),  // 1M pool
+        (1000, 1000),  // 1M pool
+        (50, 100000),  // 5M pool
+        (10, 1000000), // 10M pool
     ];
 
     for (players, buy_in) in test_cases {
@@ -265,12 +264,7 @@ fn test_payout_for_position() {
 #[test]
 fn test_no_negative_payouts() {
     // Ensure no payout is ever negative, even with weird inputs
-    let test_cases = vec![
-        (1, 1),
-        (2, 1),
-        (100, 1),
-        (10, 999),
-    ];
+    let test_cases = vec![(1, 1), (2, 1), (100, 1), (10, 999)];
 
     for (players, buy_in) in test_cases {
         let structure = PrizeStructure::standard(players, buy_in);

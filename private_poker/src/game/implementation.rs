@@ -1,209 +1,23 @@
 use enum_dispatch::enum_dispatch;
 use log::error;
-use serde::{Deserialize, Serialize};
 use std::{
     cmp::{Ordering, max, min},
     collections::{HashMap, HashSet, VecDeque},
     fmt,
     sync::Arc,
 };
-use thiserror::Error;
 
-use super::constants::{DEFAULT_MAX_USERS, MAX_PLAYERS};
 use super::entities::{
-    Action, ActionChoice, ActionChoices, Bet, BetAction, Blinds, Card, DEFAULT_BUY_IN,
-    DEFAULT_MIN_BIG_BLIND, DEFAULT_MIN_SMALL_BLIND, Deck, GameView, GameViews, PlayPositions,
-    Player, PlayerCounts, PlayerQueues, PlayerState, PlayerView, Pot, PotView, SeatIndex, Usd,
-    User, Username, Vote,
+    Action, ActionChoice, ActionChoices, Bet, BetAction, GameView, GameViews, Player, PlayerState,
+    PlayerView, Pot, PotView, SeatIndex, Usd, User, Username, Vote,
 };
 use super::functional;
 
-#[derive(Debug, Deserialize, Eq, Error, PartialEq, Serialize)]
-pub enum UserError {
-    #[error("can't show hand")]
-    CannotShowHand,
-    #[error("can't start unless you're waitlisted or a player")]
-    CannotStartGame,
-    #[error("can't vote on yourself")]
-    CannotVoteOnSelf,
-    #[error("game is full")]
-    CapacityReached,
-    #[error("game already in progress")]
-    GameAlreadyInProgress,
-    #[error("game already starting")]
-    GameAlreadyStarting,
-    #[error("need >= ${big_blind} for the big blind")]
-    InsufficientFunds { big_blind: Usd },
-    #[error("invalid action")]
-    InvalidAction,
-    #[error("illegal {bet}")]
-    InvalidBet { bet: Bet },
-    #[error("need 2+ players")]
-    NotEnoughPlayers,
-    #[error("not your turn")]
-    OutOfTurnAction,
-    #[error("user already exists")]
-    UserAlreadyExists,
-    #[error("user does not exist")]
-    UserDoesNotExist,
-    #[error("not playing")]
-    UserNotPlaying,
-    #[error("already showing hand")]
-    UserAlreadyShowingHand,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub enum GameEvent {
-    KickQueue(Username),
-    Kicked(Username),
-    RemoveQueue(Username),
-    Removed(Username),
-    SpectateQueue(Username),
-    Spectated(Username),
-    Waitlisted(Username),
-    ResetUserMoneyQueue(Username),
-    ResetUserMoney(Username),
-    ResetAllMoneyQueue,
-    ResetAllMoney,
-    PassedVote(Vote),
-    SplitPot(Username, Usd),
-    JoinedTable(Username),
-}
-
-impl fmt::Display for GameEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let repr = match self {
-            Self::KickQueue(username) => {
-                format!("{username} will be kicked after the game")
-            }
-            Self::Kicked(username) => format!("{username} kicked from the game"),
-            Self::RemoveQueue(username) => {
-                format!("{username} will be removed after the game")
-            }
-            Self::Removed(username) => format!("{username} removed from the game"),
-            Self::SpectateQueue(username) => {
-                format!("{username} will move to spectate after the game")
-            }
-            Self::Spectated(username) => format!("{username} moved to spectate"),
-            Self::Waitlisted(username) => format!("{username} waitlisted"),
-            Self::ResetUserMoneyQueue(username) => {
-                format!("{username}'s money will be reset after the game")
-            }
-            Self::ResetUserMoney(username) => format!("reset {username}'s money"),
-            Self::ResetAllMoneyQueue => "everyone's money will be reset after the game".to_string(),
-            Self::ResetAllMoney => "reset everyone's money".to_string(),
-            Self::PassedVote(vote) => format!("vote to {vote} passed"),
-            Self::SplitPot(username, amount) => format!("{username} won ${amount}"),
-            Self::JoinedTable(username) => format!("{username} joined the table"),
-        };
-        write!(f, "{repr}")
-    }
-}
-
-#[derive(Debug)]
-pub struct GameSettings {
-    pub buy_in: Usd,
-    pub min_small_blind: Usd,
-    pub min_big_blind: Usd,
-    pub max_players: usize,
-    pub max_users: usize,
-}
-
-impl GameSettings {
-    #[must_use]
-    pub fn new(max_players: usize, max_users: usize, buy_in: Usd) -> Self {
-        let min_big_blind = buy_in / 60;
-        let min_small_blind = min_big_blind / 2;
-        Self {
-            buy_in,
-            min_small_blind,
-            min_big_blind,
-            max_players,
-            max_users,
-        }
-    }
-}
-
-impl Default for GameSettings {
-    fn default() -> Self {
-        Self {
-            buy_in: DEFAULT_BUY_IN,
-            min_small_blind: DEFAULT_MIN_SMALL_BLIND,
-            min_big_blind: DEFAULT_MIN_BIG_BLIND,
-            max_players: MAX_PLAYERS,
-            max_users: DEFAULT_MAX_USERS,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct GameData {
-    /// Deck of cards. This is instantiated once and reshuffled
-    /// each deal.
-    deck: Deck,
-    pub blinds: Blinds,
-    pub spectators: HashSet<User>,
-    pub waitlist: VecDeque<User>,
-    pub open_seats: VecDeque<SeatIndex>,
-    pub players: Vec<Player>,
-    /// Community cards shared amongst all players.
-    pub board: Vec<Card>,
-    /// Mapping of running votes to users that are for those running votes.
-    votes: HashMap<Vote, HashSet<Username>>,
-    player_counts: PlayerCounts,
-    pub pot: Pot,
-    /// Queues of players to do things with at a later point of
-    /// an active game.
-    player_queues: PlayerQueues,
-    pub play_positions: PlayPositions,
-    /// Stack of game events that give more insight as to what kind
-    /// of game updates occur due to user actions or game state
-    /// changes.
-    events: VecDeque<GameEvent>,
-    /// Mapping of username to money they had when they were
-    /// last connected to the game. This is updated when a
-    /// user is removed/kicked from the game. When a user reconnects,
-    /// the value in here is used as their starting money stack.
-    ledger: HashMap<Username, Usd>,
-    /// If this is set, then users voted to reset everyone's
-    /// money, but a game was in progress, so everyone's money
-    /// will be reset after the game is over.
-    reset_all_money_after_game: bool,
-    settings: GameSettings,
-}
-
-impl GameData {
-    fn new() -> Self {
-        let settings = GameSettings::default();
-        settings.into()
-    }
-}
-
-impl From<GameSettings> for GameData {
-    fn from(value: GameSettings) -> Self {
-        Self {
-            deck: Deck::default(),
-            blinds: Blinds {
-                small: value.min_small_blind,
-                big: value.min_big_blind,
-            },
-            spectators: HashSet::with_capacity(value.max_users),
-            waitlist: VecDeque::with_capacity(value.max_users),
-            open_seats: VecDeque::from_iter(0..value.max_players),
-            players: Vec::with_capacity(value.max_players),
-            board: Vec::with_capacity(5),
-            votes: HashMap::with_capacity(2 * value.max_users + 1),
-            player_counts: PlayerCounts::default(),
-            pot: Pot::new(value.max_players),
-            player_queues: PlayerQueues::default(),
-            play_positions: PlayPositions::default(),
-            events: VecDeque::new(),
-            ledger: HashMap::with_capacity(value.max_users),
-            reset_all_money_after_game: false,
-            settings: value,
-        }
-    }
-}
+// Re-export types and traits from state_machine to avoid duplication
+pub use super::state_machine::{
+    GameData, GameEvent, GameSettings, GameStateManagement, PhaseDependentUserManagement,
+    PhaseIndependentUserManagement, SharedViewData, UserError,
+};
 
 #[derive(Debug)]
 pub struct Lobby {
@@ -264,28 +78,6 @@ pub struct UpdateBlinds {}
 #[derive(Debug)]
 pub struct BootPlayers {}
 
-#[enum_dispatch]
-pub trait GameStateManagement {
-    fn drain_events(&mut self) -> VecDeque<GameEvent>;
-    fn get_views(&self) -> GameViews;
-}
-
-#[enum_dispatch]
-pub trait PhaseDependentUserManagement {
-    fn kick_user(&mut self, username: &Username) -> Result<Option<bool>, UserError>;
-    fn remove_user(&mut self, username: &Username) -> Result<Option<bool>, UserError>;
-    fn reset_all_money(&mut self) -> bool;
-    fn reset_user_money(&mut self, username: &Username) -> Result<Option<bool>, UserError>;
-    fn spectate_user(&mut self, username: &Username) -> Result<Option<bool>, UserError>;
-}
-
-#[enum_dispatch]
-pub trait PhaseIndependentUserManagement {
-    fn cast_vote(&mut self, username: &Username, vote: Vote) -> Result<Option<Vote>, UserError>;
-    fn new_user(&mut self, username: &Username) -> Result<bool, UserError>;
-    fn waitlist_user(&mut self, username: &Username) -> Result<Option<bool>, UserError>;
-}
-
 /// A poker game with data and logic for running a poker game end-to-end.
 /// Any kind of networking, client-server, or complex user management logic
 /// is out-of-scope for this object as its sole focus is game data and logic.
@@ -293,17 +85,6 @@ pub trait PhaseIndependentUserManagement {
 pub struct Game<T> {
     pub data: GameData,
     pub state: T,
-}
-
-/// Shared read-only data that can be reused across all views
-struct SharedViewData {
-    blinds: Arc<Blinds>,
-    spectators: Arc<HashSet<User>>,
-    waitlist: Arc<VecDeque<User>>,
-    open_seats: Arc<VecDeque<usize>>,
-    board: Arc<Vec<Card>>,
-    pot: Arc<PotView>,
-    play_positions: Arc<PlayPositions>,
 }
 
 /// General game methods that can or will be used at various stages of gameplay.
@@ -1794,7 +1575,11 @@ impl PokerState {
         match self {
             Self::TakeAction(game) => {
                 // Find the player by username
-                let player = game.data.players.iter().find(|p| &p.user.name == username)?;
+                let player = game
+                    .data
+                    .players
+                    .iter()
+                    .find(|p| &p.user.name == username)?;
                 // Get the call amount for this player's seat
                 Some(game.data.pot.get_call_by_player_idx(player.seat_idx))
             }

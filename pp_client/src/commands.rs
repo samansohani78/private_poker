@@ -231,7 +231,7 @@ mod tests {
         let result = parse_command("raise 999999");
         assert!(matches!(
             result,
-            Ok(UserCommand::TakeAction(Action::Raise(Some(999999))))
+            Ok(UserCommand::TakeAction(Action::Raise(Some(999_999))))
         ));
     }
 

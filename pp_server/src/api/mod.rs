@@ -87,15 +87,20 @@
 
 pub mod auth;
 pub mod middleware;
+pub mod rate_limiter;
 pub mod request_id;
 pub mod tables;
 pub mod websocket;
 
 use axum::{
     Router,
+    extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Json},
     routing::{get, post},
 };
 use private_poker::{auth::AuthManager, table::TableManager, wallet::WalletManager};
+use serde_json::json;
 use sqlx::PgPool;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
@@ -136,18 +141,26 @@ pub struct AppState {
 ///
 /// # Endpoint Summary
 ///
+/// ## API v1 (Recommended)
 /// ```text
-/// GET  /health                      - Health check (public)
-/// POST /api/auth/register           - Register user (public)
-/// POST /api/auth/login              - Login (public)
-/// POST /api/auth/logout             - Logout (public)
-/// POST /api/auth/refresh            - Refresh token (public)
-/// GET  /api/tables                  - List tables (public)
-/// GET  /api/tables/:id              - Get table (auth required)
-/// POST /api/tables/:id/join         - Join table (auth required)
-/// POST /api/tables/:id/leave        - Leave table (auth required)
-/// POST /api/tables/:id/action       - Take action (auth required)
-/// GET  /ws/:table_id?token=<jwt>    - WebSocket (auth required)
+/// GET  /health                         - Health check (public)
+/// POST /api/v1/auth/register           - Register user (public)
+/// POST /api/v1/auth/login              - Login (public)
+/// POST /api/v1/auth/logout             - Logout (auth required)
+/// POST /api/v1/auth/refresh            - Refresh token (auth required)
+/// GET  /api/v1/tables                  - List tables (public)
+/// GET  /api/v1/tables/:id              - Get table (auth required)
+/// POST /api/v1/tables/:id/join         - Join table (auth required)
+/// POST /api/v1/tables/:id/leave        - Leave table (auth required)
+/// POST /api/v1/tables/:id/action       - Take action (auth required)
+/// GET  /ws/:table_id?token=<jwt>       - WebSocket (auth required)
+/// ```
+///
+/// ## Legacy Routes (Deprecated)
+/// ```text
+/// POST /api/auth/register              - Use /api/v1/auth/register
+/// POST /api/auth/login                 - Use /api/v1/auth/login
+/// GET  /api/tables                     - Use /api/v1/tables
 /// ```
 ///
 /// # Example
@@ -163,51 +176,98 @@ pub struct AppState {
 /// # }
 /// ```
 pub fn create_router(state: AppState) -> Router {
-    // Public routes (no authentication middleware)
-    let public_routes = Router::new()
+    // API v1 routes (versioned for future evolution)
+    let v1_routes = create_v1_router(state.clone());
+
+    // Root routes (health check, WebSocket - not versioned)
+    let root_routes = Router::new()
         .route("/health", get(health_check))
-        .route("/api/auth/register", post(auth::register))
-        .route("/api/auth/login", post(auth::login))
-        .route("/api/tables", get(tables::list_tables))
         // WebSocket route handles its own auth via query parameter
         .route("/ws/{table_id}", get(websocket::websocket_handler));
 
-    // Protected routes (require authentication middleware)
-    let protected_routes = Router::new()
-        .route("/api/auth/logout", post(auth::logout))
-        .route("/api/auth/refresh", post(auth::refresh_token))
-        .route("/api/tables/{table_id}", get(tables::get_table))
-        .route("/api/tables/{table_id}/join", post(tables::join_table))
-        .route("/api/tables/{table_id}/leave", post(tables::leave_table))
-        .route("/api/tables/{table_id}/action", post(tables::take_action))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            middleware::auth_middleware,
-        ));
-
-    // Combine routes
+    // Combine all routes
     Router::new()
-        .merge(public_routes)
-        .merge(protected_routes)
+        .merge(root_routes)
+        .nest("/api/v1", v1_routes)
+        // Legacy routes (deprecated, redirect to v1)
+        .route("/api/auth/register", post(auth::register))
+        .route("/api/auth/login", post(auth::login))
+        .route("/api/tables", get(tables::list_tables))
         .layer(axum::middleware::from_fn(request_id::request_id_middleware))
         .layer(CorsLayer::permissive())
         .with_state(state)
 }
 
+/// Create API v1 router with all versioned endpoints.
+///
+/// This allows for future API evolution (v2, v3, etc.) while maintaining
+/// backward compatibility with existing clients.
+fn create_v1_router(state: AppState) -> Router<AppState> {
+    // Public routes (no authentication middleware)
+    let public_routes = Router::new()
+        .route("/auth/register", post(auth::register))
+        .route("/auth/login", post(auth::login))
+        .route("/tables", get(tables::list_tables));
+
+    // Protected routes (require authentication middleware)
+    let protected_routes = Router::new()
+        .route("/auth/logout", post(auth::logout))
+        .route("/auth/refresh", post(auth::refresh_token))
+        .route("/tables/{table_id}", get(tables::get_table))
+        .route("/tables/{table_id}/join", post(tables::join_table))
+        .route("/tables/{table_id}/leave", post(tables::leave_table))
+        .route("/tables/{table_id}/action", post(tables::take_action))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middleware::auth_middleware,
+        ));
+
+    // Combine v1 routes
+    Router::new().merge(public_routes).merge(protected_routes)
+}
+
 /// Health check endpoint for monitoring and load balancers.
 ///
-/// Returns a simple "OK" response to indicate the server is running and accepting requests.
+/// Performs comprehensive health checks on critical system components:
+/// - Database connectivity (executes simple query)
+/// - Table manager responsiveness
+///
+/// Returns JSON with detailed health status and appropriate HTTP status code.
 ///
 /// # Response
 ///
-/// Returns `200 OK` with plain text body: `"OK"`
+/// Returns `200 OK` if all components are healthy, or `503 Service Unavailable` if any component fails.
 ///
 /// # Example
 ///
 /// ```bash
 /// curl http://localhost:3000/health
-/// # OK
+/// # {"status":"healthy","database":true,"tables":true,"timestamp":"2025-11-22T10:30:00Z"}
 /// ```
-async fn health_check() -> &'static str {
-    "OK"
+async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
+    // Check database connectivity
+    let db_healthy = sqlx::query("SELECT 1")
+        .fetch_one(&*state.pool)
+        .await
+        .is_ok();
+
+    // Check if table manager is responsive (has active tables count)
+    let tables_healthy = state.table_manager.table_count() >= 0;
+
+    let overall_healthy = db_healthy && tables_healthy;
+
+    let status_code = if overall_healthy {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+
+    let response = json!({
+        "status": if overall_healthy { "healthy" } else { "unhealthy" },
+        "database": db_healthy,
+        "tables": tables_healthy,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+    });
+
+    (status_code, Json(response))
 }

@@ -1,10 +1,15 @@
 //! Anti-collusion detection system with shadow flagging.
 
+#![allow(clippy::similar_names)]
+#![allow(clippy::needless_raw_string_hashes)]
+
+use super::errors::AntiCollusionResult;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 use std::{
     collections::{HashMap, HashSet},
+    net::IpAddr,
     sync::Arc,
 };
 
@@ -73,6 +78,49 @@ pub struct CollusionFlag {
     pub reviewed_at: Option<DateTime<Utc>>,
 }
 
+/// Normalize IP address to handle IPv4-mapped IPv6 addresses
+///
+/// Converts IPv4-mapped IPv6 addresses (e.g., `::ffff:192.168.1.1`) to their
+/// plain IPv4 form (e.g., `192.168.1.1`). This ensures that the same client
+/// connecting via IPv4 or IPv6 is treated consistently.
+///
+/// # Arguments
+///
+/// * `ip_str` - IP address string to normalize
+///
+/// # Returns
+///
+/// * `String` - Normalized IP address
+///
+/// # Examples
+///
+/// ```
+/// use private_poker::security::normalize_ip;
+///
+/// assert_eq!(normalize_ip("192.168.1.1"), "192.168.1.1");
+/// assert_eq!(normalize_ip("::ffff:192.168.1.1"), "192.168.1.1");
+/// assert_eq!(normalize_ip("2001:db8::1"), "2001:db8::1");
+/// assert_eq!(normalize_ip("invalid"), "invalid");
+/// ```
+pub fn normalize_ip(ip_str: &str) -> String {
+    match ip_str.parse::<IpAddr>() {
+        Ok(IpAddr::V6(v6)) => {
+            // Check if this is an IPv4-mapped IPv6 address
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                v4.to_string()
+            } else {
+                v6.to_string()
+            }
+        }
+        Ok(IpAddr::V4(v4)) => v4.to_string(),
+        Err(_) => {
+            // If parsing fails, return original string
+            // This handles edge cases like hostnames or invalid IPs
+            ip_str.to_string()
+        }
+    }
+}
+
 /// Anti-collusion detector
 pub struct AntiCollusionDetector {
     /// Database pool
@@ -105,13 +153,16 @@ impl AntiCollusionDetector {
 
     /// Register user IP address
     ///
+    /// Automatically normalizes IPv4-mapped IPv6 addresses to plain IPv4.
+    ///
     /// # Arguments
     ///
     /// * `user_id` - User ID
-    /// * `ip_address` - IP address
+    /// * `ip_address` - IP address (will be normalized)
     pub async fn register_user_ip(&self, user_id: i64, ip_address: String) {
+        let normalized_ip = normalize_ip(&ip_address);
         let mut ips = self.user_ips.write().await;
-        ips.insert(user_id, ip_address);
+        ips.insert(user_id, normalized_ip);
     }
 
     /// Check for same-IP players at table
@@ -123,12 +174,12 @@ impl AntiCollusionDetector {
     ///
     /// # Returns
     ///
-    /// * `Result<bool, String>` - Whether same-IP player detected
+    /// * `AntiCollusionResult<bool>` - Whether same-IP player detected
     pub async fn check_same_ip_at_table(
         &self,
         table_id: i64,
         user_id: i64,
-    ) -> Result<bool, String> {
+    ) -> AntiCollusionResult<bool> {
         let ips = self.user_ips.read().await;
         let user_ip = match ips.get(&user_id) {
             Some(ip) => ip.clone(),
@@ -211,14 +262,14 @@ impl AntiCollusionDetector {
     ///
     /// # Returns
     ///
-    /// * `Result<(), String>` - Success or error
+    /// * `AntiCollusionResult<()>` - Success or error
     pub async fn analyze_win_rate(
         &self,
         user_id: i64,
         opponent_id: i64,
         table_id: i64,
         win_rate: f32,
-    ) -> Result<(), String> {
+    ) -> AntiCollusionResult<()> {
         // Check if users share same IP
         let ips = self.user_ips.read().await;
         let user_ip = ips.get(&user_id);
@@ -259,13 +310,13 @@ impl AntiCollusionDetector {
     ///
     /// # Returns
     ///
-    /// * `Result<(), String>` - Success or error
+    /// * `AntiCollusionResult<()>` - Success or error
     pub async fn analyze_folding_pattern(
         &self,
         table_id: i64,
         user_id: i64,
         beneficiary_id: i64,
-    ) -> Result<(), String> {
+    ) -> AntiCollusionResult<()> {
         // Check if coordinated folding (always folding to same player)
         // This would require historical tracking - placeholder for now
 
@@ -302,7 +353,7 @@ impl AntiCollusionDetector {
         flag_type: FlagType,
         severity: FlagSeverity,
         details: serde_json::Value,
-    ) -> Result<(), String> {
+    ) -> AntiCollusionResult<()> {
         sqlx::query(
             r#"
             INSERT INTO collusion_flags (user_id, table_id, flag_type, severity, details)
@@ -315,8 +366,7 @@ impl AntiCollusionDetector {
         .bind(severity.to_string())
         .bind(details)
         .execute(self.pool.as_ref())
-        .await
-        .map_err(|e| format!("Database error: {}", e))?;
+        .await?;
 
         log::warn!(
             "Collusion flag created: user={}, table={}, type={}, severity={}",
@@ -333,8 +383,8 @@ impl AntiCollusionDetector {
     ///
     /// # Returns
     ///
-    /// * `Result<Vec<CollusionFlag>, String>` - List of unreviewed flags
-    pub async fn get_unreviewed_flags(&self) -> Result<Vec<CollusionFlag>, String> {
+    /// * `AntiCollusionResult<Vec<CollusionFlag>>` - List of unreviewed flags
+    pub async fn get_unreviewed_flags(&self) -> AntiCollusionResult<Vec<CollusionFlag>> {
         let rows = sqlx::query(
             r#"
             SELECT id, user_id, table_id, flag_type, severity, details, created_at,
@@ -346,8 +396,7 @@ impl AntiCollusionDetector {
             "#,
         )
         .fetch_all(self.pool.as_ref())
-        .await
-        .map_err(|e| format!("Database error: {}", e))?;
+        .await?;
 
         let flags = rows
             .into_iter()
@@ -379,12 +428,12 @@ impl AntiCollusionDetector {
     ///
     /// # Returns
     ///
-    /// * `Result<(), String>` - Success or error
+    /// * `AntiCollusionResult<()>` - Success or error
     pub async fn mark_flag_reviewed(
         &self,
         flag_id: i64,
         reviewer_user_id: i64,
-    ) -> Result<(), String> {
+    ) -> AntiCollusionResult<()> {
         sqlx::query(
             r#"
             UPDATE collusion_flags
@@ -395,8 +444,7 @@ impl AntiCollusionDetector {
         .bind(reviewer_user_id)
         .bind(flag_id)
         .execute(self.pool.as_ref())
-        .await
-        .map_err(|e| format!("Database error: {}", e))?;
+        .await?;
 
         Ok(())
     }
@@ -409,8 +457,8 @@ impl AntiCollusionDetector {
     ///
     /// # Returns
     ///
-    /// * `Result<Vec<CollusionFlag>, String>` - List of flags
-    pub async fn get_user_flags(&self, user_id: i64) -> Result<Vec<CollusionFlag>, String> {
+    /// * `AntiCollusionResult<Vec<CollusionFlag>>` - List of flags
+    pub async fn get_user_flags(&self, user_id: i64) -> AntiCollusionResult<Vec<CollusionFlag>> {
         let rows = sqlx::query(
             r#"
             SELECT id, user_id, table_id, flag_type, severity, details, created_at,
@@ -423,8 +471,7 @@ impl AntiCollusionDetector {
         )
         .bind(user_id)
         .fetch_all(self.pool.as_ref())
-        .await
-        .map_err(|e| format!("Database error: {}", e))?;
+        .await?;
 
         let flags = rows
             .into_iter()
@@ -470,13 +517,13 @@ impl IpTableRestrictions {
     ///
     /// # Returns
     ///
-    /// * `Result<bool, String>` - Whether user can join
+    /// * `AntiCollusionResult<bool>` - Whether user can join
     pub async fn can_join_table(
         &self,
         detector: &AntiCollusionDetector,
         table_id: i64,
         user_id: i64,
-    ) -> Result<bool, String> {
+    ) -> AntiCollusionResult<bool> {
         if !self.enforce_single_ip {
             return Ok(true);
         }
@@ -508,8 +555,14 @@ mod tests {
     fn test_flag_type_display() {
         assert_eq!(FlagType::SameIpTable.to_string(), "same_ip_table");
         assert_eq!(FlagType::WinRateAnomaly.to_string(), "win_rate_anomaly");
-        assert_eq!(FlagType::CoordinatedFolding.to_string(), "coordinated_folding");
-        assert_eq!(FlagType::SuspiciousTransfers.to_string(), "suspicious_transfers");
+        assert_eq!(
+            FlagType::CoordinatedFolding.to_string(),
+            "coordinated_folding"
+        );
+        assert_eq!(
+            FlagType::SuspiciousTransfers.to_string(),
+            "suspicious_transfers"
+        );
         assert_eq!(FlagType::SeatManipulation.to_string(), "seat_manipulation");
     }
 
@@ -581,5 +634,54 @@ mod tests {
         let original = FlagType::WinRateAnomaly;
         let cloned = original.clone();
         assert_eq!(original, cloned);
+    }
+
+    #[test]
+    fn test_normalize_ip_ipv4() {
+        // Plain IPv4 should remain unchanged
+        assert_eq!(normalize_ip("192.168.1.1"), "192.168.1.1");
+        assert_eq!(normalize_ip("10.0.0.1"), "10.0.0.1");
+        assert_eq!(normalize_ip("127.0.0.1"), "127.0.0.1");
+    }
+
+    #[test]
+    fn test_normalize_ip_ipv4_mapped_ipv6() {
+        // IPv4-mapped IPv6 should be converted to IPv4
+        assert_eq!(normalize_ip("::ffff:192.168.1.1"), "192.168.1.1");
+        assert_eq!(normalize_ip("::ffff:10.0.0.1"), "10.0.0.1");
+        assert_eq!(normalize_ip("::ffff:127.0.0.1"), "127.0.0.1");
+    }
+
+    #[test]
+    fn test_normalize_ip_pure_ipv6() {
+        // Pure IPv6 should remain IPv6
+        let ipv6_1 = normalize_ip("2001:db8::1");
+        assert!(ipv6_1.contains("2001:db8"));
+
+        let ipv6_2 = normalize_ip("fe80::1");
+        assert!(ipv6_2.contains("fe80"));
+
+        let ipv6_3 = normalize_ip("::1");
+        assert_eq!(ipv6_3, "::1");
+    }
+
+    #[test]
+    fn test_normalize_ip_invalid() {
+        // Invalid IPs should be returned as-is
+        assert_eq!(normalize_ip("invalid"), "invalid");
+        assert_eq!(normalize_ip("999.999.999.999"), "999.999.999.999");
+        assert_eq!(normalize_ip(""), "");
+        assert_eq!(normalize_ip("hostname.example.com"), "hostname.example.com");
+    }
+
+    #[test]
+    fn test_normalize_ip_comparison() {
+        // Verify that normalized IPs can be compared correctly
+        let ipv4 = normalize_ip("192.168.1.100");
+        let ipv4_mapped = normalize_ip("::ffff:192.168.1.100");
+        assert_eq!(
+            ipv4, ipv4_mapped,
+            "IPv4 and IPv4-mapped should normalize to same value"
+        );
     }
 }

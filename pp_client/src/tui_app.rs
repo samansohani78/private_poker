@@ -241,7 +241,13 @@ pub struct TuiApp {
 }
 
 impl TuiApp {
-    pub fn new(username: String, table_name: String, table_id: i64, api_client: crate::api_client::ApiClient, initial_view: GameView) -> Self {
+    pub fn new(
+        username: String,
+        table_name: String,
+        table_id: i64,
+        api_client: crate::api_client::ApiClient,
+        initial_view: GameView,
+    ) -> Self {
         // Fill help menu with help text lines
         let mut help_handle = ScrollableList::new(MAX_LOG_RECORDS);
         help_handle.push("".into());
@@ -335,11 +341,17 @@ impl TuiApp {
                     // Call HTTP API to join table
                     match self.api_client.join_table(self.table_id, *buy_in).await {
                         Ok(_) => {
-                            let record = Record::new(RecordKind::Ack, "Joined table successfully via HTTP API".to_string());
+                            let record = Record::new(
+                                RecordKind::Ack,
+                                "Joined table successfully via HTTP API".to_string(),
+                            );
                             self.log_handle.push(record.into());
                         }
                         Err(e) => {
-                            let record = Record::new(RecordKind::Error, format!("Failed to join table: {}", e));
+                            let record = Record::new(
+                                RecordKind::Error,
+                                format!("Failed to join table: {}", e),
+                            );
                             self.log_handle.push(record.into());
                         }
                     }

@@ -99,8 +99,25 @@ pub enum TableMessage {
     /// Internal: Advance game state (called by timer)
     Tick,
 
-    /// Internal: Bot turn processing
-    ProcessBotTurn,
+    /// Subscribe to state change notifications
+    Subscribe {
+        user_id: i64,
+        sender: tokio::sync::mpsc::Sender<StateChangeNotification>,
+    },
+
+    /// Unsubscribe from state change notifications
+    Unsubscribe { user_id: i64 },
+}
+
+/// Notification sent when table state changes
+#[derive(Debug, Clone)]
+pub enum StateChangeNotification {
+    /// Game state changed (action taken, new round, etc.)
+    StateChanged,
+    /// Player joined or left
+    PlayerListChanged,
+    /// Pot size changed
+    PotChanged,
 }
 
 /// Response from table operations

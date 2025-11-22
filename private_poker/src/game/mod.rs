@@ -10,9 +10,14 @@
 pub mod constants;
 pub mod entities;
 pub mod functional;
+pub mod state_machine;
 
-// Temporary: include the full implementation until refactoring is complete
+// Game implementation
 mod implementation;
 
-// Re-export everything from implementation for backward compatibility
+// Re-export everything from implementation and state_machine for backward compatibility
 pub use implementation::*;
+pub use state_machine::{
+    GameData, GameEvent, GameSettings, GameStateManagement, PhaseDependentUserManagement,
+    PhaseIndependentUserManagement, UserError,
+};

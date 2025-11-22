@@ -1,5 +1,7 @@
 //! Tournament manager for creating and managing Sit-n-Go tournaments.
 
+#![allow(clippy::needless_raw_string_hashes)]
+
 use super::models::{
     PrizeStructure, TournamentConfig, TournamentId, TournamentInfo, TournamentRegistration,
     TournamentState, TournamentType,

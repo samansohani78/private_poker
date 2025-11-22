@@ -8,7 +8,7 @@ use private_poker::{
 
 /// Helper to create a game state with N players ready to play
 fn setup_game_with_players(n_players: usize) -> PokerState {
-    let settings = GameSettings::new(10, 20, 1000);
+    let settings = GameSettings::new(1000, 10, 20, 10, 9);
     let mut game = PokerState::from(settings);
 
     // Add players as spectators first, then move them to waitlist

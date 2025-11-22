@@ -16,8 +16,16 @@ fn test_deck_exhaustion_automatic_reshuffle() {
     // Deal all 52 cards
     for i in 0..52 {
         let card = deck.deal_card();
-        assert!(card.0 >= 1 && card.0 <= 13, "Card value {} out of range at index {}", card.0, i);
-        assert!(matches!(card.1, Suit::Club | Suit::Diamond | Suit::Heart | Suit::Spade));
+        assert!(
+            card.0 >= 1 && card.0 <= 13,
+            "Card value {} out of range at index {}",
+            card.0,
+            i
+        );
+        assert!(matches!(
+            card.1,
+            Suit::Club | Suit::Diamond | Suit::Heart | Suit::Spade
+        ));
     }
 
     // Deck should be exhausted now (deck_idx == 52)
@@ -26,7 +34,10 @@ fn test_deck_exhaustion_automatic_reshuffle() {
 
     // Should get a valid card (not panic)
     assert!(card_53.0 >= 1 && card_53.0 <= 13);
-    assert!(matches!(card_53.1, Suit::Club | Suit::Diamond | Suit::Heart | Suit::Spade));
+    assert!(matches!(
+        card_53.1,
+        Suit::Club | Suit::Diamond | Suit::Heart | Suit::Spade
+    ));
 }
 
 /// Test Issue #12: Multiple deck exhaustions
@@ -46,7 +57,6 @@ fn test_multiple_deck_exhaustions() {
 
     // Should have automatically reshuffled 3 times without panicking
 }
-
 
 /// Test deck integrity after reshuffle
 #[test]
@@ -68,7 +78,10 @@ fn test_deck_integrity_after_reshuffle() {
             i
         );
         assert!(
-            matches!(card.1, Suit::Club | Suit::Diamond | Suit::Heart | Suit::Spade),
+            matches!(
+                card.1,
+                Suit::Club | Suit::Diamond | Suit::Heart | Suit::Spade
+            ),
             "Invalid suit at position {}",
             i
         );
@@ -91,11 +104,7 @@ fn test_deck_distribution_after_reshuffles() {
     // Each value (1-13) should appear roughly 200/13 ≈ 15 times
     // Allow some variance but ensure all values appear
     for (value, &count) in value_counts.iter().enumerate().skip(1).take(13) {
-        assert!(
-            count > 0,
-            "Value {} never appeared in 200 cards",
-            value
-        );
+        assert!(count > 0, "Value {} never appeared in 200 cards", value);
         assert!(
             count < 50,
             "Value {} appeared {} times (too many) in 200 cards",

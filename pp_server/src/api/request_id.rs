@@ -50,7 +50,9 @@ pub async fn request_id_middleware(
     let request_id = get_or_generate_request_id(request.headers());
 
     // Store request ID in request extensions for access by handlers
-    request.extensions_mut().insert(RequestId(request_id.clone()));
+    request
+        .extensions_mut()
+        .insert(RequestId(request_id.clone()));
 
     // Log request start with ID
     tracing::info!(
@@ -109,14 +111,10 @@ where
         parts: &mut axum::http::request::Parts,
         _state: &S,
     ) -> Result<Self, Self::Rejection> {
-        parts
-            .extensions
-            .get::<RequestId>()
-            .cloned()
-            .ok_or((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Request ID not found in extensions",
-            ))
+        parts.extensions.get::<RequestId>().cloned().ok_or((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Request ID not found in extensions",
+        ))
     }
 }
 
@@ -166,12 +164,18 @@ mod tests {
     fn test_get_or_generate_request_id_with_invalid_header() {
         let mut headers = HeaderMap::new();
         // Add invalid UTF-8 bytes
-        headers.insert(REQUEST_ID_HEADER, HeaderValue::from_bytes(&[0xFF, 0xFE]).unwrap());
+        headers.insert(
+            REQUEST_ID_HEADER,
+            HeaderValue::from_bytes(&[0xFF, 0xFE]).unwrap(),
+        );
 
         let request_id = get_or_generate_request_id(&headers);
 
         // Should generate new UUID when header is invalid
-        assert!(Uuid::parse_str(&request_id).is_ok(), "Should generate valid UUID for invalid header");
+        assert!(
+            Uuid::parse_str(&request_id).is_ok(),
+            "Should generate valid UUID for invalid header"
+        );
     }
 
     #[test]
@@ -192,9 +196,9 @@ mod tests {
     #[tokio::test]
     async fn test_middleware_adds_request_id_to_response() {
         use axum::{
+            Router,
             body::Body,
             middleware::{self},
-            Router,
             routing::get,
         };
         use tower::ServiceExt;
@@ -208,30 +212,31 @@ mod tests {
             .layer(middleware::from_fn(request_id_middleware));
 
         let response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/test")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+            .oneshot(Request::builder().uri("/test").body(Body::empty()).unwrap())
             .await
             .unwrap();
 
         // Response should have request ID header
         let header_value = response.headers().get(REQUEST_ID_HEADER);
-        assert!(header_value.is_some(), "Response should have request ID header");
+        assert!(
+            header_value.is_some(),
+            "Response should have request ID header"
+        );
 
         // Should be a valid UUID
         let request_id = header_value.unwrap().to_str().unwrap();
-        assert!(Uuid::parse_str(request_id).is_ok(), "Request ID should be a valid UUID");
+        assert!(
+            Uuid::parse_str(request_id).is_ok(),
+            "Request ID should be a valid UUID"
+        );
     }
 
     #[tokio::test]
     async fn test_middleware_preserves_existing_request_id() {
         use axum::{
+            Router,
             body::Body,
             middleware::{self},
-            Router,
             routing::get,
         };
         use tower::ServiceExt;
@@ -258,7 +263,10 @@ mod tests {
 
         // Response should have the same request ID
         let header_value = response.headers().get(REQUEST_ID_HEADER);
-        assert!(header_value.is_some(), "Response should have request ID header");
+        assert!(
+            header_value.is_some(),
+            "Response should have request ID header"
+        );
         assert_eq!(header_value.unwrap().to_str().unwrap(), custom_id);
     }
 }

@@ -286,7 +286,7 @@ mod tests {
         let (mut client, mut stream) = setup();
 
         // Test with strings of increasing size
-        for size in [1000, 10000, 100000, 500000] {
+        for size in [1000, 10_000, 100_000, 500_000] {
             let large_string = "x".repeat(size);
             assert!(write_prefixed(&mut stream, &large_string).is_ok());
             let received: String = read_prefixed(&mut client).unwrap();

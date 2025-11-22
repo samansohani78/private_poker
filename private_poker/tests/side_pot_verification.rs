@@ -23,7 +23,7 @@ fn test_simple_side_pot_three_players() {
     // - Side pot: $100 ($50 from players 1 and 2, only players 1 and 2 eligible)
 
     let mut investments: BTreeMap<usize, i64> = BTreeMap::new();
-    investments.insert(0, 50);  // All-in short
+    investments.insert(0, 50); // All-in short
     investments.insert(1, 100); // Full bet
     investments.insert(2, 100); // Full bet
 
@@ -74,7 +74,7 @@ fn test_side_pot_with_folder() {
     // - Player 0's $50 goes into pot but player 0 is not eligible to win
     // - Only players 1 and 2 compete for the pot
     let mut investments: BTreeMap<usize, i64> = BTreeMap::new();
-    investments.insert(0, 50);  // Folded - contributes but can't win
+    investments.insert(0, 50); // Folded - contributes but can't win
     investments.insert(1, 100); // Active
     investments.insert(2, 100); // Active
 
@@ -92,13 +92,14 @@ fn investment_strategy() -> impl Strategy<Value = i64> {
 /// Strategy to generate 2-9 players with different investment amounts
 fn player_investments_strategy() -> impl Strategy<Value = BTreeMap<usize, i64>> {
     (2usize..=9).prop_flat_map(|num_players| {
-        prop::collection::vec(investment_strategy(), num_players..=num_players)
-            .prop_map(move |investments| {
+        prop::collection::vec(investment_strategy(), num_players..=num_players).prop_map(
+            move |investments| {
                 investments
                     .into_iter()
                     .enumerate()
                     .collect::<BTreeMap<usize, i64>>()
-            })
+            },
+        )
     })
 }
 
@@ -345,8 +346,7 @@ fn test_equal_investments_single_pot() {
     assert_eq!(total_pot, 300);
 
     // All three players eligible for entire pot
-    let unique_amounts: std::collections::BTreeSet<_> =
-        investments.values().copied().collect();
+    let unique_amounts: std::collections::BTreeSet<_> = investments.values().copied().collect();
     assert_eq!(unique_amounts.len(), 1, "Should have only one pot level");
 }
 
@@ -354,8 +354,8 @@ fn test_equal_investments_single_pot() {
 #[test]
 fn test_zero_investment_excluded() {
     let mut investments: BTreeMap<usize, i64> = BTreeMap::new();
-    investments.insert(0, 0);   // No investment
-    investments.insert(1, 50);  // Small investment
+    investments.insert(0, 0); // No investment
+    investments.insert(1, 50); // Small investment
 
     let active_investments: Vec<_> = investments
         .values()

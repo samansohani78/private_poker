@@ -1,3 +1,5 @@
+#![allow(clippy::unreadable_literal)]
+
 //! Integration tests for security features.
 //!
 //! Tests rate limiting, anti-collusion detection, and seat randomization.

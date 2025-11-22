@@ -22,10 +22,10 @@ impl ProtocolVersion {
         // V1 and V2 are compatible via legacy mode in server
         matches!(
             (self, other),
-            (ProtocolVersion::V1, ProtocolVersion::V1)
-                | (ProtocolVersion::V2, ProtocolVersion::V2)
-                | (ProtocolVersion::V1, ProtocolVersion::V2)
-                | (ProtocolVersion::V2, ProtocolVersion::V1)
+            (
+                ProtocolVersion::V1 | ProtocolVersion::V2,
+                ProtocolVersion::V1 | ProtocolVersion::V2
+            )
         )
     }
 }
@@ -44,12 +44,15 @@ mod tests {
     use serde::{Serialize, de::DeserializeOwned};
 
     // Small helpers to keep tests readable and consistent with bincode 2
+    // Note: In tests, .unwrap() is acceptable as test failures are expected to panic
     fn serialize_value<T: Serialize>(value: &T) -> Vec<u8> {
-        encode_to_vec(value, config::standard()).unwrap()
+        encode_to_vec(value, config::standard()).expect("Test serialization should succeed")
     }
 
     fn deserialize_value<T: DeserializeOwned>(bytes: &[u8]) -> T {
-        decode_from_slice(bytes, config::standard()).unwrap().0
+        decode_from_slice(bytes, config::standard())
+            .expect("Test deserialization should succeed")
+            .0
     }
 
     #[test]

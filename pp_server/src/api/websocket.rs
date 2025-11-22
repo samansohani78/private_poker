@@ -63,7 +63,7 @@ use log::{error, info, warn};
 use private_poker::entities::Action;
 use serde::{Deserialize, Serialize};
 
-use super::AppState;
+use super::{AppState, rate_limiter::RateLimiter};
 
 #[derive(Debug, Deserialize)]
 pub struct WsQuery {
@@ -184,17 +184,46 @@ async fn handle_socket(socket: WebSocket, table_id: i64, user_id: i64, state: Ap
 
     info!("WebSocket connected: table={}, user={}", table_id, user_id);
 
+    // Create rate limiters for DoS protection
+    let mut burst_limiter = RateLimiter::burst(); // 10 messages per second
+    let mut sustained_limiter = RateLimiter::sustained(); // 100 messages per minute
+
     // Create channel for sending responses from message handler
     let (response_tx, mut response_rx) = tokio::sync::mpsc::channel::<String>(32);
 
-    // Spawn task to send table updates and responses
+    // Subscribe to table state change notifications
+    let (notification_tx, mut notification_rx) =
+        tokio::sync::mpsc::channel::<private_poker::table::messages::StateChangeNotification>(32);
+
+    // Send Subscribe message to table actor
+    let table_handle = match state.table_manager.get_table(table_id).await {
+        Some(h) => h,
+        None => {
+            error!("Table {} not found", table_id);
+            return;
+        }
+    };
+
+    if table_handle
+        .send(private_poker::table::messages::TableMessage::Subscribe {
+            user_id,
+            sender: notification_tx,
+        })
+        .await
+        .is_err()
+    {
+        error!("Failed to subscribe to table {} notifications", table_id);
+        return;
+    }
+
+    // Spawn task to send table updates and responses (event-driven)
     let send_state = state.clone();
     let send_task = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
         loop {
             tokio::select! {
-                _ = interval.tick() => {
-                    // Get game view for this user
+                // Receive state change notification from table actor
+                Some(_notification) = notification_rx.recv() => {
+                    // Get updated game view for this user
                     let table_handle = match send_state.table_manager.get_table(table_id).await {
                         Some(h) => h,
                         None => {
@@ -253,6 +282,35 @@ async fn handle_socket(socket: WebSocket, table_id: i64, user_id: i64, state: Ap
     while let Some(msg) = receiver.next().await {
         match msg {
             Ok(Message::Text(text)) => {
+                // Check rate limits before processing
+                if !burst_limiter.check() {
+                    warn!(
+                        "Burst rate limit exceeded for user {} (table {}). Blocking message.",
+                        user_id, table_id
+                    );
+                    let error_response = ServerResponse::Error {
+                        message: "Rate limit exceeded. Please slow down.".to_string(),
+                    };
+                    if let Ok(json) = serde_json::to_string(&error_response) {
+                        let _ = response_tx.send(json).await;
+                    }
+                    continue;
+                }
+
+                if !sustained_limiter.check() {
+                    warn!(
+                        "Sustained rate limit exceeded for user {} (table {}). Blocking message.",
+                        user_id, table_id
+                    );
+                    let error_response = ServerResponse::Error {
+                        message: "Too many messages. Please wait before sending more.".to_string(),
+                    };
+                    if let Ok(json) = serde_json::to_string(&error_response) {
+                        let _ = response_tx.send(json).await;
+                    }
+                    continue;
+                }
+
                 info!("Received message from user {}: {}", user_id, text);
 
                 // Parse and process message
@@ -289,6 +347,13 @@ async fn handle_socket(socket: WebSocket, table_id: i64, user_id: i64, state: Ap
 
     // Cleanup - automatically leave table on disconnect
     send_task.abort();
+
+    // Unsubscribe from table notifications
+    if let Some(table_handle) = state.table_manager.get_table(table_id).await {
+        let _ = table_handle
+            .send(private_poker::table::messages::TableMessage::Unsubscribe { user_id })
+            .await;
+    }
 
     // Attempt to leave table if user was playing
     if let Some(table_handle) = state.table_manager.get_table(table_id).await {

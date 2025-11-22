@@ -31,11 +31,11 @@ impl DatabaseConfig {
     ///
     /// Expected environment variables:
     /// - `DATABASE_URL`: PostgreSQL connection string
-    /// - `DB_MAX_CONNECTIONS`: Maximum pool size (default: 20)
-    /// - `DB_MIN_CONNECTIONS`: Minimum pool size (default: 5)
-    /// - `DB_CONNECTION_TIMEOUT`: Connection timeout in seconds (default: 10)
-    /// - `DB_IDLE_TIMEOUT`: Idle timeout in seconds (default: 600)
-    /// - `DB_MAX_LIFETIME`: Max lifetime in seconds (default: 1800)
+    /// - `DB_MAX_CONNECTIONS`: Maximum pool size (default: `20`)
+    /// - `DB_MIN_CONNECTIONS`: Minimum pool size (default: `5`)
+    /// - `DB_CONNECTION_TIMEOUT`: Connection timeout in seconds (default: `10`)
+    /// - `DB_IDLE_TIMEOUT`: Idle timeout in seconds (default: `600`)
+    /// - `DB_MAX_LIFETIME`: Max lifetime in seconds (default: `1800`)
     ///
     /// # Returns
     ///

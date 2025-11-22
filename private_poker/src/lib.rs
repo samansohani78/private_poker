@@ -11,17 +11,17 @@
 //! The game consists of 14 distinct phases (states), each representing a specific point
 //! in the poker game lifecycle:
 //!
-//! - **Lobby**: Waiting for players to join
-//! - **SeatPlayers**: Assigning table positions
-//! - **MoveButton**: Rotating the dealer button
-//! - **CollectBlinds**: Collecting small and big blinds
-//! - **Deal**: Dealing hole cards to players
-//! - **TakeAction**: Player betting rounds
-//! - **Flop/Turn/River**: Dealing community cards
-//! - **ShowHands**: Revealing cards at showdown
-//! - **DistributePot**: Distributing winnings
-//! - **RemovePlayers/BootPlayers**: Player management
-//! - **UpdateBlinds**: Adjusting blind levels
+//! - **`Lobby`**: Waiting for players to join
+//! - **`SeatPlayers`**: Assigning table positions
+//! - **`MoveButton`**: Rotating the dealer button
+//! - **`CollectBlinds`**: Collecting small and big blinds
+//! - **`Deal`**: Dealing hole cards to players
+//! - **`TakeAction`**: Player betting rounds
+//! - **`Flop`/`Turn`/`River`**: Dealing community cards
+//! - **`ShowHands`**: Revealing cards at showdown
+//! - **`DistributePot`**: Distributing winnings
+//! - **`RemovePlayers`/`BootPlayers`**: Player management
+//! - **`UpdateBlinds`**: Adjusting blind levels
 //!
 //! ## Core Modules
 //!

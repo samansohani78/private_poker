@@ -345,9 +345,11 @@ mod tests {
 
     #[test]
     fn test_bot_stats_vpip_calculation() {
-        let mut stats = BotStats::default();
-        stats.hands_played = 100;
-        stats.vpip_count = 30;
+        let stats = BotStats {
+            hands_played: 100,
+            vpip_count: 30,
+            ..Default::default()
+        };
         assert_eq!(stats.vpip(), 0.30);
     }
 
@@ -359,25 +361,31 @@ mod tests {
 
     #[test]
     fn test_bot_stats_pfr_calculation() {
-        let mut stats = BotStats::default();
-        stats.hands_played = 100;
-        stats.pfr_count = 20;
+        let stats = BotStats {
+            hands_played: 100,
+            pfr_count: 20,
+            ..Default::default()
+        };
         assert_eq!(stats.pfr(), 0.20);
     }
 
     #[test]
     fn test_bot_stats_aggression_factor_zero_passive() {
-        let mut stats = BotStats::default();
-        stats.aggressive_actions = 50;
-        stats.passive_actions = 0;
+        let stats = BotStats {
+            aggressive_actions: 50,
+            passive_actions: 0,
+            ..Default::default()
+        };
         assert_eq!(stats.aggression_factor(), 50.0);
     }
 
     #[test]
     fn test_bot_stats_aggression_factor_calculation() {
-        let mut stats = BotStats::default();
-        stats.aggressive_actions = 60;
-        stats.passive_actions = 40;
+        let stats = BotStats {
+            aggressive_actions: 60,
+            passive_actions: 40,
+            ..Default::default()
+        };
         assert_eq!(stats.aggression_factor(), 1.5);
     }
 
@@ -389,9 +397,11 @@ mod tests {
 
     #[test]
     fn test_bot_stats_showdown_rate_calculation() {
-        let mut stats = BotStats::default();
-        stats.hands_played = 100;
-        stats.showdown_count = 25;
+        let stats = BotStats {
+            hands_played: 100,
+            showdown_count: 25,
+            ..Default::default()
+        };
         assert_eq!(stats.showdown_rate(), 0.25);
     }
 
@@ -403,19 +413,23 @@ mod tests {
 
     #[test]
     fn test_bot_stats_win_rate_positive() {
-        let mut stats = BotStats::default();
-        stats.starting_chips = 1000;
-        stats.current_chips = 1500;
-        stats.hands_played = 100;
+        let stats = BotStats {
+            starting_chips: 1000,
+            current_chips: 1500,
+            hands_played: 100,
+            ..Default::default()
+        };
         assert_eq!(stats.win_rate(), 5.0); // +500 chips / 100 hands = 5.0
     }
 
     #[test]
     fn test_bot_stats_win_rate_negative() {
-        let mut stats = BotStats::default();
-        stats.starting_chips = 1000;
-        stats.current_chips = 800;
-        stats.hands_played = 50;
+        let stats = BotStats {
+            starting_chips: 1000,
+            current_chips: 800,
+            hands_played: 50,
+            ..Default::default()
+        };
         assert_eq!(stats.win_rate(), -4.0); // -200 chips / 50 hands = -4.0
     }
 

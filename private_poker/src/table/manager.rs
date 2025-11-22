@@ -1,4 +1,5 @@
 //! Table manager for spawning and managing multiple table actors.
+#![allow(clippy::needless_raw_string_hashes)]
 
 use super::{
     actor::{TableActor, TableHandle},
@@ -406,14 +407,17 @@ impl TableManager {
             .await
             .map_err(|e| format!("Failed to send message: {}", e))?;
 
-        let response = rx.await
+        let response = rx
+            .await
             .map_err(|_| "Failed to receive response".to_string())?;
 
         // Update cache on successful join
         if response.is_success()
-            && let Ok(state) = self.get_table_state(table_id, None).await {
-                self.update_player_count_cache(table_id, state.player_count).await;
-            }
+            && let Ok(state) = self.get_table_state(table_id, None).await
+        {
+            self.update_player_count_cache(table_id, state.player_count)
+                .await;
+        }
 
         Ok(response)
     }
@@ -447,14 +451,17 @@ impl TableManager {
             .await
             .map_err(|e| format!("Failed to send message: {}", e))?;
 
-        let response = rx.await
+        let response = rx
+            .await
             .map_err(|_| "Failed to receive response".to_string())?;
 
         // Update cache on successful leave
         if response.is_success()
-            && let Ok(state) = self.get_table_state(table_id, None).await {
-                self.update_player_count_cache(table_id, state.player_count).await;
-            }
+            && let Ok(state) = self.get_table_state(table_id, None).await
+        {
+            self.update_player_count_cache(table_id, state.player_count)
+                .await;
+        }
 
         Ok(response)
     }
@@ -510,5 +517,21 @@ impl TableManager {
     pub async fn update_player_count_cache(&self, table_id: TableId, player_count: usize) {
         let mut cache = self.player_count_cache.write().await;
         cache.insert(table_id, player_count);
+    }
+
+    /// Get the count of active tables
+    ///
+    /// Returns the number of currently active tables for health check purposes.
+    ///
+    /// # Returns
+    ///
+    /// * `i32` - Number of active tables (always >= 0)
+    pub fn table_count(&self) -> i32 {
+        // Use try_read to avoid blocking on health checks
+        // If we can't get the lock, return -1 to indicate unhealthy
+        self.tables
+            .try_read()
+            .map(|tables| tables.len() as i32)
+            .unwrap_or(-1)
     }
 }

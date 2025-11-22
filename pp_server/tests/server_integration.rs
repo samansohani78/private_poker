@@ -85,8 +85,12 @@ async fn test_health_check_endpoint() {
 
     assert_eq!(response.status(), StatusCode::OK);
 
+    // Health check now returns JSON with detailed status
     let body = response.into_body().collect().await.unwrap().to_bytes();
-    assert_eq!(&body[..], b"OK");
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["status"], "healthy");
+    assert_eq!(json["database"], true);
+    assert_eq!(json["tables"], true);
 }
 
 // ============================================================================
@@ -257,9 +261,9 @@ async fn test_404_for_invalid_endpoint() {
 
     let response = app.oneshot(request).await.unwrap();
 
-    // Server returns 401 (Unauthorized) because auth middleware runs before routing
-    // This is expected behavior - authentication is checked first
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    // Server returns 404 (Not Found) for invalid routes
+    // With API versioning, routing happens before auth for invalid paths
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
