@@ -50,18 +50,13 @@ async fn test_rate_limit_login_success() {
 
     // First 5 attempts should be allowed (login limit)
     for i in 0..5 {
-        let result = limiter.check_rate_limit("login", &identifier).await;
+        let result = limiter.check_and_record("login", &identifier).await;
         assert!(result.is_ok(), "Check #{} should succeed", i + 1);
         assert!(
             result.unwrap().is_allowed(),
             "Attempt #{} should be allowed",
             i + 1
         );
-
-        limiter
-            .record_attempt("login", &identifier)
-            .await
-            .expect("Recording should succeed");
     }
 
     // Clean up
@@ -81,17 +76,13 @@ async fn test_rate_limit_exceeded() {
     // Exceed the login limit (5 attempts)
     for _i in 0..5 {
         limiter
-            .check_rate_limit("login", &identifier)
+            .check_and_record("login", &identifier)
             .await
-            .expect("Check should succeed");
-        limiter
-            .record_attempt("login", &identifier)
-            .await
-            .expect("Recording should succeed");
+            .expect("Check and record should succeed");
     }
 
     // 6th attempt should be locked
-    let result = limiter.check_rate_limit("login", &identifier).await;
+    let result = limiter.check_and_record("login", &identifier).await;
     assert!(result.is_ok(), "Check should succeed");
     assert!(!result.unwrap().is_allowed(), "Attempt should be locked");
 
@@ -112,13 +103,13 @@ async fn test_rate_limit_different_endpoints() {
     // Login attempts (limit 5)
     for _ in 0..5 {
         limiter
-            .record_attempt("login", &identifier)
+            .check_and_record("login", &identifier)
             .await
             .expect("Should succeed");
     }
 
     // Register attempts should have separate counter
-    let result = limiter.check_rate_limit("register", &identifier).await;
+    let result = limiter.check_and_record("register", &identifier).await;
     assert!(result.is_ok());
     assert!(
         result.unwrap().is_allowed(),
@@ -139,12 +130,12 @@ async fn test_rate_limit_reset() {
 
     // Exceed limit
     for _ in 0..6 {
-        limiter.record_attempt("login", &identifier).await.ok();
+        limiter.check_and_record("login", &identifier).await.ok();
     }
 
     // Should be locked
     let result = limiter
-        .check_rate_limit("login", &identifier)
+        .check_and_record("login", &identifier)
         .await
         .unwrap();
     assert!(!result.is_allowed());
@@ -157,7 +148,7 @@ async fn test_rate_limit_reset() {
 
     // Should be allowed again
     let result = limiter
-        .check_rate_limit("login", &identifier)
+        .check_and_record("login", &identifier)
         .await
         .unwrap();
     assert!(result.is_allowed(), "Should be allowed after reset");

@@ -26,7 +26,7 @@ tokio = { version = "1.48.0", features = ["full"] }
 argon2 = "0.5.3"
 jsonwebtoken = { version = "10.2", features = ["aws_lc_rs"] }
 totp-rs = "5.7.0"
-subtle = "2.6"
+subtle = "2.6.1"
 
 # Utilities
 uuid = { version = "1.18.1", features = ["v4", "serde"] }

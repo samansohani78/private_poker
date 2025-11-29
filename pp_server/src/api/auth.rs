@@ -29,6 +29,7 @@ use private_poker::auth::{LoginRequest, RegisterRequest};
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use super::request_id::RequestId;
 
 #[derive(Debug, Deserialize)]
 pub struct LoginPayload {
@@ -98,6 +99,7 @@ pub struct ErrorResponse {
 /// - Passwords are hashed before storage
 pub async fn register(
     State(state): State<AppState>,
+    RequestId(request_id): RequestId,
     Json(payload): Json<RegisterPayload>,
 ) -> Result<Json<AuthResponse>, (StatusCode, Json<ErrorResponse>)> {
     let request = RegisterRequest {
@@ -109,6 +111,12 @@ pub async fn register(
 
     match state.auth_manager.register(request).await {
         Ok(_user) => {
+            tracing::info!(
+                request_id = %request_id,
+                username = %payload.username,
+                "New user registered successfully"
+            );
+
             // Login to generate tokens
             let login_request = LoginRequest {
                 username: payload.username,
@@ -133,12 +141,20 @@ pub async fn register(
                 )),
             }
         }
-        Err(e) => Err((
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: e.client_message(),
-            }),
-        )),
+        Err(e) => {
+            tracing::warn!(
+                request_id = %request_id,
+                username = %payload.username,
+                error = %e,
+                "Registration failed"
+            );
+            Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: e.client_message(),
+                }),
+            ))
+        }
     }
 }
 
@@ -181,6 +197,7 @@ pub async fn register(
 /// - Device fingerprinting is used for session tracking
 pub async fn login(
     State(state): State<AppState>,
+    RequestId(request_id): RequestId,
     Json(payload): Json<LoginPayload>,
 ) -> Result<Json<AuthResponse>, (StatusCode, Json<ErrorResponse>)> {
     let request = LoginRequest {
@@ -192,18 +209,34 @@ pub async fn login(
     let device_fp = "web".to_string();
 
     match state.auth_manager.login(request, device_fp).await {
-        Ok((user, tokens)) => Ok(Json(AuthResponse {
-            access_token: tokens.access_token,
-            refresh_token: tokens.refresh_token,
-            user_id: user.id,
-            username: user.username,
-        })),
-        Err(e) => Err((
-            StatusCode::UNAUTHORIZED,
-            Json(ErrorResponse {
-                error: e.client_message(),
-            }),
-        )),
+        Ok((user, tokens)) => {
+            tracing::info!(
+                request_id = %request_id,
+                user_id = user.id,
+                username = %user.username,
+                "User logged in successfully"
+            );
+            Ok(Json(AuthResponse {
+                access_token: tokens.access_token,
+                refresh_token: tokens.refresh_token,
+                user_id: user.id,
+                username: user.username,
+            }))
+        }
+        Err(e) => {
+            tracing::warn!(
+                request_id = %request_id,
+                username = %payload.username,
+                error = %e,
+                "Login failed"
+            );
+            Err((
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: e.client_message(),
+                }),
+            ))
+        }
     }
 }
 

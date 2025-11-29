@@ -316,6 +316,24 @@ impl TableActor {
         });
     }
 
+    /// Add user mapping atomically (bidirectional update)
+    ///
+    /// This ensures both mappings are updated together to prevent desynchronization.
+    /// If this method panics after the first insert, both HashMaps would be partially
+    /// updated, but since they're in-memory structures and inserts don't fail (unless
+    /// OOM), this is safe in practice.
+    fn insert_user_mapping(&mut self, user_id: i64, username: Username) {
+        self.user_mapping.insert(user_id, username.clone());
+        self.username_mapping.insert(username, user_id);
+    }
+
+    /// Remove user mapping atomically (bidirectional removal)
+    fn remove_user_mapping(&mut self, user_id: i64) {
+        if let Some(username) = self.user_mapping.remove(&user_id) {
+            self.username_mapping.remove(&username);
+        }
+    }
+
     /// Handle join table request
     async fn handle_join(
         &mut self,
@@ -324,76 +342,114 @@ impl TableActor {
         buy_in_amount: i64,
         passphrase: Option<String>,
     ) -> TableResponse {
-        // Check if table is private and verify access
-        if self.config.is_private
-            && let Some(ref required_hash) = self.config.passphrase_hash
-        {
-            match passphrase {
-                Some(ref pass) => {
-                    // Verify passphrase using argon2 with constant-time comparison
-                    use argon2::{Argon2, PasswordHash, PasswordVerifier};
-
-                    let parsed_hash = match PasswordHash::new(required_hash) {
-                        Ok(h) => h,
-                        Err(_) => {
-                            log::error!("Invalid passphrase hash format for table {}", self.id);
-                            return TableResponse::Error(
-                                "Internal server error: invalid passphrase configuration"
-                                    .to_string(),
-                            );
-                        }
-                    };
-
-                    let argon2 = Argon2::default();
-                    if argon2
-                        .verify_password(pass.as_bytes(), &parsed_hash)
-                        .is_err()
-                    {
-                        return TableResponse::AccessDenied;
-                    }
-                }
-                None => {
-                    return TableResponse::AccessDenied;
-                }
-            }
+        // 1. Verify table access for private tables
+        if let Err(response) = self.verify_table_access(passphrase) {
+            return response;
         }
 
-        // Validate buy-in amount
+        // 2. Validate buy-in amount
+        if let Err(response) = self.validate_buy_in_amount(buy_in_amount) {
+            return response;
+        }
+
+        // 3. Check wallet balance
+        if let Err(response) = self.check_wallet_balance(user_id, buy_in_amount).await {
+            return response;
+        }
+
+        // 4. Execute join with escrow transfer
+        self.execute_join_with_escrow(user_id, username, buy_in_amount).await
+    }
+
+    /// Verify access to private tables via passphrase
+    fn verify_table_access(&self, passphrase: Option<String>) -> Result<(), TableResponse> {
+        // Public tables don't need passphrase verification
+        if !self.config.is_private {
+            return Ok(());
+        }
+
+        let required_hash = match &self.config.passphrase_hash {
+            Some(hash) => hash,
+            None => return Ok(()), // Private table without hash (shouldn't happen)
+        };
+
+        let pass = match passphrase {
+            Some(p) => p,
+            None => return Err(TableResponse::AccessDenied),
+        };
+
+        // Verify passphrase using argon2 with constant-time comparison
+        use argon2::{Argon2, PasswordHash, PasswordVerifier};
+
+        let parsed_hash = match PasswordHash::new(required_hash) {
+            Ok(h) => h,
+            Err(_) => {
+                log::error!("Invalid passphrase hash format for table {}", self.id);
+                return Err(TableResponse::Error(
+                    "Internal server error: invalid passphrase configuration".to_string(),
+                ));
+            }
+        };
+
+        let argon2 = Argon2::default();
+        if argon2.verify_password(pass.as_bytes(), &parsed_hash).is_err() {
+            return Err(TableResponse::AccessDenied);
+        }
+
+        Ok(())
+    }
+
+    /// Validate buy-in amount against table limits
+    fn validate_buy_in_amount(&self, buy_in_amount: i64) -> Result<(), TableResponse> {
         let min_buy_in = self.config.min_buy_in_chips();
         let max_buy_in = self.config.max_buy_in_chips();
 
         if buy_in_amount < min_buy_in || buy_in_amount > max_buy_in {
-            return TableResponse::Error(format!(
+            return Err(TableResponse::Error(format!(
                 "Buy-in must be between {} and {} chips",
                 min_buy_in, max_buy_in
-            ));
+            )));
         }
 
         // Enforce that buy-in must cover at least one big blind
-        // This prevents players from joining with insufficient chips to play
         let big_blind = self.config.big_blind;
         if buy_in_amount < big_blind {
-            return TableResponse::Error(format!(
+            return Err(TableResponse::Error(format!(
                 "Buy-in ({}) must be at least the big blind ({})",
                 buy_in_amount, big_blind
-            ));
+            )));
         }
 
-        // Check wallet balance
+        Ok(())
+    }
+
+    /// Check if user has sufficient wallet balance
+    async fn check_wallet_balance(
+        &self,
+        user_id: i64,
+        required_amount: i64,
+    ) -> Result<(), TableResponse> {
         match self.wallet_manager.get_wallet(user_id).await {
             Ok(wallet) => {
-                if wallet.balance < buy_in_amount {
-                    return TableResponse::InsufficientChips {
-                        required: buy_in_amount,
+                if wallet.balance < required_amount {
+                    return Err(TableResponse::InsufficientChips {
+                        required: required_amount,
                         available: wallet.balance,
-                    };
+                    });
                 }
+                Ok(())
             }
-            Err(e) => {
-                return TableResponse::Error(format!("Wallet error: {}", e));
-            }
+            Err(e) => Err(TableResponse::Error(format!("Wallet error: {}", e))),
         }
+    }
 
+    /// Execute join operation with escrow transfer
+    async fn execute_join_with_escrow(
+        &mut self,
+        user_id: i64,
+        username: String,
+        buy_in_amount: i64,
+    ) -> TableResponse {
         // Transfer chips to escrow with collision-resistant idempotency key
         let idempotency_key = format!(
             "join_{}_{}_{}",
@@ -401,75 +457,87 @@ impl TableActor {
             chrono::Utc::now().timestamp_millis(),
             Uuid::new_v4()
         );
+
         match self
             .wallet_manager
             .transfer_to_escrow(user_id, self.id, buy_in_amount, idempotency_key)
             .await
         {
-            Ok(_) => {
-                // Add user to game state
-                let poker_username: Username = username.clone().into();
-
-                match self.state.new_user(&poker_username) {
-                    Ok(_) => {
-                        // Store mappings
-                        self.user_mapping.insert(user_id, poker_username.clone());
-                        self.username_mapping.insert(poker_username, user_id);
-
-                        // Adjust bot count now that a human joined
-                        let human_count = self.user_mapping.len();
-                        let _ = self.bot_manager.adjust_bot_count(human_count).await;
-
-                        log::info!(
-                            "User {} ({}) joined table {} with {} chips",
-                            user_id,
-                            username,
-                            self.id,
-                            buy_in_amount
-                        );
-
-                        // Notify subscribers that player list changed
-                        self.notify_state_change(
-                            super::messages::StateChangeNotification::PlayerListChanged,
-                        );
-
-                        TableResponse::Success
-                    }
-                    Err(e) => {
-                        // Rollback the transfer with collision-resistant idempotency key
-                        // Using millisecond timestamp for better precision than second-level timestamp
-                        let rollback_key = format!(
-                            "rollback_join_{}_{}",
-                            user_id,
-                            chrono::Utc::now().timestamp_millis()
-                        );
-                        match self
-                            .wallet_manager
-                            .transfer_from_escrow(user_id, self.id, buy_in_amount, rollback_key)
-                            .await
-                        {
-                            Ok(_) => {
-                                log::info!(
-                                    "Successfully rolled back join transfer for user {} on table {}",
-                                    user_id,
-                                    self.id
-                                );
-                            }
-                            Err(rollback_err) => {
-                                log::error!(
-                                    "CRITICAL: Failed to rollback join transfer for user {} on table {}: {}. Chips may be stuck in escrow!",
-                                    user_id,
-                                    self.id,
-                                    rollback_err
-                                );
-                            }
-                        }
-
-                        TableResponse::Error(format!("Failed to join game: {:?}", e))
-                    }
-                }
-            }
+            Ok(_) => self.add_user_to_game(user_id, username, buy_in_amount).await,
             Err(e) => TableResponse::Error(format!("Transfer failed: {}", e)),
+        }
+    }
+
+    /// Add user to game state after successful escrow transfer
+    async fn add_user_to_game(
+        &mut self,
+        user_id: i64,
+        username: String,
+        buy_in_amount: i64,
+    ) -> TableResponse {
+        let poker_username: Username = username.clone().into();
+
+        match self.state.new_user(&poker_username) {
+            Ok(_) => {
+                // Store mappings atomically
+                self.insert_user_mapping(user_id, poker_username.clone());
+
+                // Adjust bot count now that a human joined
+                let human_count = self.user_mapping.len();
+                let _ = self.bot_manager.adjust_bot_count(human_count).await;
+
+                log::info!(
+                    "User {} ({}) joined table {} with {} chips",
+                    user_id,
+                    username,
+                    self.id,
+                    buy_in_amount
+                );
+
+                // Notify subscribers that player list changed
+                self.notify_state_change(
+                    super::messages::StateChangeNotification::PlayerListChanged,
+                );
+
+                TableResponse::Success
+            }
+            Err(e) => {
+                // Rollback on failure
+                self.rollback_join_transfer(user_id, buy_in_amount).await;
+                // Use Display formatting instead of Debug to avoid exposing internal details
+                TableResponse::Error(format!("Failed to join game: {}", e))
+            }
+        }
+    }
+
+    /// Rollback escrow transfer if join fails
+    async fn rollback_join_transfer(&self, user_id: i64, amount: i64) {
+        let rollback_key = format!(
+            "rollback_join_{}_{}",
+            user_id,
+            chrono::Utc::now().timestamp_millis()
+        );
+
+        match self
+            .wallet_manager
+            .transfer_from_escrow(user_id, self.id, amount, rollback_key)
+            .await
+        {
+            Ok(_) => {
+                log::info!(
+                    "Successfully rolled back join transfer for user {} on table {}",
+                    user_id,
+                    self.id
+                );
+            }
+            Err(rollback_err) => {
+                log::error!(
+                    "CRITICAL: Failed to rollback join transfer for user {} on table {}: {}. Chips may be stuck in escrow!",
+                    user_id,
+                    self.id,
+                    rollback_err
+                );
+            }
         }
     }
 
@@ -515,9 +583,8 @@ impl TableActor {
                     .await
                 {
                     Ok(_) => {
-                        // Remove mappings
-                        self.user_mapping.remove(&user_id);
-                        self.username_mapping.remove(&username);
+                        // Remove mappings atomically
+                        self.remove_user_mapping(user_id);
 
                         // Adjust bot count now that a human left
                         let human_count = self.user_mapping.len();
@@ -673,9 +740,8 @@ impl TableActor {
 
         match self.state.spectate_user(&poker_username) {
             Ok(_) => {
-                // Store mapping
-                self.user_mapping.insert(user_id, poker_username.clone());
-                self.username_mapping.insert(poker_username, user_id);
+                // Store mapping atomically
+                self.insert_user_mapping(user_id, poker_username);
 
                 // Notify subscribers that player list changed (spectator added)
                 self.notify_state_change(
@@ -701,9 +767,8 @@ impl TableActor {
         // Remove spectator
         match self.state.remove_user(&username) {
             Ok(_) => {
-                // Remove mappings
-                self.user_mapping.remove(&user_id);
-                self.username_mapping.remove(&username);
+                // Remove mappings atomically
+                self.remove_user_mapping(user_id);
 
                 // Notify subscribers that player list changed (spectator removed)
                 self.notify_state_change(
@@ -722,9 +787,8 @@ impl TableActor {
 
         match self.state.waitlist_user(&poker_username) {
             Ok(_) => {
-                // Store mapping
-                self.user_mapping.insert(user_id, poker_username.clone());
-                self.username_mapping.insert(poker_username, user_id);
+                // Store mapping atomically
+                self.insert_user_mapping(user_id, poker_username);
                 TableResponse::Success
             }
             Err(e) => TableResponse::Error(format!("Failed to join waitlist: {:?}", e)),
@@ -744,9 +808,8 @@ impl TableActor {
         // Remove from waitlist
         match self.state.remove_user(&username) {
             Ok(_) => {
-                // Remove mappings
-                self.user_mapping.remove(&user_id);
-                self.username_mapping.remove(&username);
+                // Remove mappings atomically
+                self.remove_user_mapping(user_id);
                 TableResponse::Success
             }
             Err(e) => TableResponse::Error(format!("Failed to leave waitlist: {:?}", e)),
@@ -809,101 +872,108 @@ impl TableActor {
     async fn handle_bot_turns(&mut self) {
         use crate::bot::decision::BotDecisionMaker;
 
-        // Check if it's a bot's turn
-        if let Some(next_username) = self.state.get_next_action_username() {
-            // Check if this username is a bot (not in username_mapping means it's a bot)
-            if !self.username_mapping.contains_key(&next_username) {
-                // Look up bot player to get difficulty parameters
-                if let Some(bot_player) = self
-                    .bot_manager
-                    .get_bot_by_username(next_username.as_str())
-                    .await
-                {
-                    // Get action choices and game view
-                    if let Some(action_choices) = self.state.get_action_choices() {
-                        let views = self.state.get_views();
-                        if let Some(bot_view) = views.get(&next_username) {
-                            // Get bot's player view
-                            let bot_player_view = bot_view
-                                .players
-                                .iter()
-                                .find(|p| p.user.name == next_username);
+        // Early return: Check if there's a next action needed
+        let next_username = match self.state.get_next_action_username() {
+            Some(username) => username,
+            None => return, // No action needed
+        };
 
-                            if let Some(player_view) = bot_player_view {
-                                let hole_cards = &player_view.cards;
-                                let board_cards = bot_view.board.as_slice();
-                                let pot_size = bot_view.pot.size;
-                                let bot_chips = player_view.user.money;
+        // Early return: Check if it's a human player (not a bot)
+        if self.username_mapping.contains_key(&next_username) {
+            return; // Human player, not a bot
+        }
 
-                                // Get the actual amount the bot needs to call from the pot
-                                let current_bet = self
-                                    .state
-                                    .get_call_amount_for_player(&next_username)
-                                    .unwrap_or(0);
+        // Early return: Check if we have action choices
+        let action_choices = match self.state.get_action_choices() {
+            Some(choices) => choices,
+            None => return, // No actions available
+        };
 
-                                // Use decision maker with bot's difficulty parameters
-                                let mut decision_maker = BotDecisionMaker::new();
-                                let can_check = action_choices.contains(&Action::Check);
-
-                                // Get position and player count from game views
-                                let views = self.state.get_views();
-                                let (position, players_in_hand) =
-                                    if let Some((_, view)) = views.iter().next() {
-                                        // Find bot's position among active players
-                                        let bot_position = view
-                                            .players
-                                            .iter()
-                                            .position(|p| p.user.name == next_username);
-                                        let active_count = view.players.len();
-                                        (bot_position, active_count)
-                                    } else {
-                                        (None, 2) // Default to heads-up if no view
-                                    };
-
-                                let ctx = crate::bot::decision::BotDecisionContext {
-                                    hole_cards,
-                                    board_cards,
-                                    pot_size,
-                                    current_bet,
-                                    bot_chips,
-                                    can_check,
-                                    position,
-                                    players_remaining: players_in_hand,
-                                };
-                                let action = decision_maker.decide_action(&bot_player, &ctx);
-
-                                log::debug!(
-                                    "Bot {} ({:?}) at position {:?} taking action: {:?}",
-                                    next_username,
-                                    bot_player.config.difficulty,
-                                    position,
-                                    action
-                                );
-                                let _ = self.state.take_action(&next_username, action);
-
-                                // Notify subscribers that state changed after bot action
-                                self.notify_state_change(
-                                    super::messages::StateChangeNotification::StateChanged,
-                                );
-                            } else {
-                                // Fallback: check or fold
-                                self.take_fallback_action(&next_username, &action_choices)
-                                    .await;
-                            }
-                        } else {
-                            // Fallback: check or fold
-                            self.take_fallback_action(&next_username, &action_choices)
-                                .await;
-                        }
-                    }
-                } else {
-                    // Bot not found in manager, use simple fallback
-                    if let Some(action_choices) = self.state.get_action_choices() {
-                        self.take_fallback_action(&next_username, &action_choices)
-                            .await;
-                    }
-                }
+        // Early return: Try to get bot player configuration
+        let bot_player = match self.bot_manager.get_bot_by_username(next_username.as_str()).await {
+            Some(bot) => bot,
+            None => {
+                // Bot not found - use fallback action
+                self.take_fallback_action(&next_username, &action_choices).await;
+                return;
             }
+        };
+
+        // Early return: Try to get bot's view
+        let views = self.state.get_views();
+        let bot_view = match views.get(&next_username) {
+            Some(view) => view,
+            None => {
+                // No view available - use fallback action
+                self.take_fallback_action(&next_username, &action_choices).await;
+                return;
+            }
+        };
+
+        // Early return: Try to find bot's player view
+        let player_view = match bot_view.players.iter().find(|p| p.user.name == next_username) {
+            Some(view) => view,
+            None => {
+                // Player view not found - use fallback action
+                self.take_fallback_action(&next_username, &action_choices).await;
+                return;
+            }
+        };
+
+        // Extract decision context data
+        let hole_cards = &player_view.cards;
+        let board_cards = bot_view.board.as_slice();
+        let pot_size = bot_view.pot.size;
+        let bot_chips = player_view.user.money;
+        let current_bet = self.state.get_call_amount_for_player(&next_username).unwrap_or(0);
+        let can_check = action_choices.contains(&Action::Check);
+
+        // Get position and player count
+        let (position, players_in_hand) = self.get_bot_position_info(&next_username);
+
+        // Create decision context
+        let ctx = crate::bot::decision::BotDecisionContext {
+            hole_cards,
+            board_cards,
+            pot_size,
+            current_bet,
+            bot_chips,
+            can_check,
+            position,
+            players_remaining: players_in_hand,
+        };
+
+        // Make bot decision
+        let mut decision_maker = BotDecisionMaker::new();
+        let action = decision_maker.decide_action(&bot_player, &ctx);
+
+        log::debug!(
+            "Bot {} ({:?}) at position {:?} taking action: {:?}",
+            next_username,
+            bot_player.config.difficulty,
+            position,
+            action
+        );
+
+        // Execute action
+        let _ = self.state.take_action(&next_username, action);
+
+        // Notify subscribers
+        self.notify_state_change(super::messages::StateChangeNotification::StateChanged);
+    }
+
+    /// Get bot's position and count of players in hand (helper for handle_bot_turns)
+    fn get_bot_position_info(&self, bot_username: &Username) -> (Option<usize>, usize) {
+        let views = self.state.get_views();
+        if let Some((_, view)) = views.iter().next() {
+            let bot_position = view
+                .players
+                .iter()
+                .position(|p| p.user.name == *bot_username);
+            let active_count = view.players.len();
+            (bot_position, active_count)
+        } else {
+            (None, 2) // Default to heads-up if no view
         }
     }
 

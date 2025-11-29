@@ -102,15 +102,16 @@ pub struct Deck {
 impl Deck {
     pub fn deal_card(&mut self) -> Card {
         // Bounds check to prevent deck exhaustion
+        // This should NEVER happen in valid gameplay:
+        // Max cards used: 2 (hole) × 9 (players) + 5 (board) + 3 (burn) = 28 cards
+        // Deck size: 52 cards, leaving 24 cards unused
         if self.deck_idx >= self.cards.len() {
-            // This should never happen in normal play (52 cards > 10 players * 2 + 5 board)
-            // but we handle it defensively by reshuffling
-            log::error!(
-                "Deck exhausted unexpectedly! deck_idx={}, cards={}. Reshuffling.",
+            panic!(
+                "Deck exhausted - this indicates a critical bug! deck_idx={}, len={}. \
+                This should be impossible in valid poker gameplay.",
                 self.deck_idx,
                 self.cards.len()
             );
-            self.shuffle();
         }
 
         let card = self.cards[self.deck_idx];
@@ -603,7 +604,7 @@ impl fmt::Display for Vote {
 pub struct PlayerView {
     pub user: User,
     pub state: PlayerState,
-    pub cards: Vec<Card>,
+    pub cards: std::sync::Arc<Vec<Card>>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -1635,15 +1636,16 @@ mod tests {
             money: 1000,
         };
         let cards = vec![Card(14, Suit::Spade), Card(13, Suit::Heart)];
+        let cards_arc = Arc::new(cards.clone());
         let player_view = PlayerView {
             user: user.clone(),
             state: PlayerState::Wait,
-            cards: cards.clone(),
+            cards: cards_arc.clone(),
         };
 
         assert_eq!(player_view.user, user);
         assert!(matches!(player_view.state, PlayerState::Wait));
-        assert_eq!(player_view.cards, cards);
+        assert_eq!(player_view.cards.as_ref(), &cards);
     }
 
     #[test]
@@ -2076,7 +2078,7 @@ mod tests {
         let player_view = PlayerView {
             user: user.clone(),
             state: PlayerState::Fold,
-            cards: vec![],
+            cards: Arc::new(vec![]),
         };
         let serialized = serialize_value(&player_view);
         let deserialized: PlayerView = deserialize_value(&serialized);
@@ -2092,7 +2094,7 @@ mod tests {
         let player_view = PlayerView {
             user: user.clone(),
             state: PlayerState::Call,
-            cards: vec![Card(14, Suit::Spade), Card(13, Suit::Heart)],
+            cards: Arc::new(vec![Card(14, Suit::Spade), Card(13, Suit::Heart)]),
         };
 
         let serialized = serialize_value(&player_view);

@@ -45,11 +45,10 @@
 //!
 //!     // Rate limiting
 //!     let rate_limiter = RateLimiter::new(db_pool.clone());
-//!     let result = rate_limiter.check_rate_limit("login", "192.168.1.1").await?;
+//!     let result = rate_limiter.check_and_record("login", "192.168.1.1").await?;
 //!
 //!     if result.is_allowed() {
 //!         println!("Login allowed, {} attempts remaining", result.remaining().unwrap());
-//!         rate_limiter.record_attempt("login", "192.168.1.1").await?;
 //!     }
 //!
 //!     // Anti-collusion

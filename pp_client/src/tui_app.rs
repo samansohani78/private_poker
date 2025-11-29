@@ -455,7 +455,7 @@ impl TuiApp {
         // Add player's best hand
         let hand_repr = if !player.cards.is_empty() {
             let mut cards = self.view.board.as_ref().clone();
-            cards.extend(player.cards.clone());
+            cards.extend(player.cards.as_ref().clone());
             functional::prepare_hand(&mut cards);
             let hand = functional::eval(&cards);
             hand.first()

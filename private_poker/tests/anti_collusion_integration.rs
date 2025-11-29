@@ -447,3 +447,484 @@ async fn test_player_leave_cleanup() {
     cleanup_flags(&pool, user.id).await;
     cleanup_user(&pool, &username).await;
 }
+
+#[tokio::test]
+async fn test_coordinated_folding_pattern() {
+    // Test: User A always folds to user B -> creates coordinated folding flag
+    let (detector, auth_mgr, pool) = setup_managers().await;
+    let username_folder = unique_username("folder");
+    let username_beneficiary = unique_username("benefic");
+    let table_id = 1006;
+    let same_ip = "10.10.10.10";
+
+    cleanup_user(&pool, &username_folder).await;
+    cleanup_user(&pool, &username_beneficiary).await;
+
+    // Register users
+    let folder = auth_mgr
+        .register(RegisterRequest {
+            username: username_folder.clone(),
+            password: "SecurePass123!".to_string(),
+            display_name: username_folder.to_string(),
+            email: None,
+        })
+        .await
+        .expect("Folder registration should succeed");
+
+    let beneficiary = auth_mgr
+        .register(RegisterRequest {
+            username: username_beneficiary.clone(),
+            password: "SecurePass123!".to_string(),
+            display_name: username_beneficiary.to_string(),
+            email: None,
+        })
+        .await
+        .expect("Beneficiary registration should succeed");
+
+    cleanup_flags(&pool, folder.id).await;
+    cleanup_flags(&pool, beneficiary.id).await;
+
+    // Both join (same IP)
+    detector
+        .register_user_ip(folder.id, same_ip.to_string())
+        .await;
+    detector.add_player_to_table(table_id, folder.id).await;
+
+    detector
+        .register_user_ip(beneficiary.id, same_ip.to_string())
+        .await;
+    detector.add_player_to_table(table_id, beneficiary.id).await;
+
+    // Analyze folding pattern: folder always folds to beneficiary
+    detector
+        .analyze_folding_pattern(table_id, folder.id, beneficiary.id)
+        .await
+        .expect("Folding analysis should complete");
+
+    // Check for coordinated folding flag
+    let fold_flags: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM collusion_flags
+         WHERE table_id = $1 AND flag_type = 'coordinated_folding'",
+    )
+    .bind(table_id)
+    .fetch_one(pool.as_ref())
+    .await
+    .expect("Should query folding flags");
+
+    assert!(
+        fold_flags > 0,
+        "Should create coordinated folding flag for suspicious pattern"
+    );
+
+    // Check severity
+    let severity: Option<String> = sqlx::query_scalar(
+        "SELECT severity FROM collusion_flags
+         WHERE table_id = $1 AND flag_type = 'coordinated_folding'
+         LIMIT 1",
+    )
+    .bind(table_id)
+    .fetch_optional(pool.as_ref())
+    .await
+    .expect("Should query severity");
+
+    assert_eq!(
+        severity,
+        Some("low".to_string()),
+        "Coordinated folding should have Low severity"
+    );
+
+    cleanup_flags(&pool, folder.id).await;
+    cleanup_flags(&pool, beneficiary.id).await;
+    cleanup_user(&pool, &username_folder).await;
+    cleanup_user(&pool, &username_beneficiary).await;
+}
+
+#[tokio::test]
+async fn test_ip_change_detection() {
+    // Test: User changes IP during session
+    let (detector, auth_mgr, pool) = setup_managers().await;
+    let username = unique_username("ipchange");
+    let table_id = 1007;
+    let ip1 = "203.0.113.100";
+    let ip2 = "203.0.113.200";
+
+    cleanup_user(&pool, &username).await;
+
+    let user = auth_mgr
+        .register(RegisterRequest {
+            username: username.clone(),
+            password: "SecurePass123!".to_string(),
+            display_name: username.to_string(),
+            email: None,
+        })
+        .await
+        .expect("User registration should succeed");
+
+    cleanup_flags(&pool, user.id).await;
+
+    // Register first IP
+    detector.register_user_ip(user.id, ip1.to_string()).await;
+    detector.add_player_to_table(table_id, user.id).await;
+
+    // Change IP
+    detector.register_user_ip(user.id, ip2.to_string()).await;
+
+    // Verify IP was updated (check via same-IP detection with another user)
+    let username2 = unique_username("ipcheck");
+    cleanup_user(&pool, &username2).await;
+
+    let user2 = auth_mgr
+        .register(RegisterRequest {
+            username: username2.clone(),
+            password: "SecurePass123!".to_string(),
+            display_name: username2.to_string(),
+            email: None,
+        })
+        .await
+        .expect("User2 registration should succeed");
+
+    // User2 joins with IP2 (same as updated IP)
+    detector.register_user_ip(user2.id, ip2.to_string()).await;
+    let same_ip_detected = detector
+        .check_same_ip_at_table(table_id, user2.id)
+        .await
+        .expect("Check should succeed");
+
+    assert!(
+        same_ip_detected,
+        "Should detect same IP after IP change"
+    );
+
+    cleanup_flags(&pool, user.id).await;
+    cleanup_flags(&pool, user2.id).await;
+    cleanup_user(&pool, &username).await;
+    cleanup_user(&pool, &username2).await;
+}
+
+#[tokio::test]
+async fn test_win_rate_below_threshold_no_flag() {
+    // Test: Win rate below 80% threshold doesn't create flag
+    let (detector, auth_mgr, pool) = setup_managers().await;
+    let username1 = unique_username("win70");
+    let username2 = unique_username("lose70");
+    let table_id = 1008;
+    let same_ip = "172.20.0.1";
+
+    cleanup_user(&pool, &username1).await;
+    cleanup_user(&pool, &username2).await;
+
+    // Register users
+    let user1 = auth_mgr
+        .register(RegisterRequest {
+            username: username1.clone(),
+            password: "SecurePass123!".to_string(),
+            display_name: username1.to_string(),
+            email: None,
+        })
+        .await
+        .expect("User1 registration should succeed");
+
+    let user2 = auth_mgr
+        .register(RegisterRequest {
+            username: username2.clone(),
+            password: "SecurePass123!".to_string(),
+            display_name: username2.to_string(),
+            email: None,
+        })
+        .await
+        .expect("User2 registration should succeed");
+
+    cleanup_flags(&pool, user1.id).await;
+    cleanup_flags(&pool, user2.id).await;
+
+    // Both join (same IP)
+    detector
+        .register_user_ip(user1.id, same_ip.to_string())
+        .await;
+    detector.add_player_to_table(table_id, user1.id).await;
+
+    detector
+        .register_user_ip(user2.id, same_ip.to_string())
+        .await;
+    detector.add_player_to_table(table_id, user2.id).await;
+
+    // 70% win rate (below 80% threshold)
+    detector
+        .analyze_win_rate(user1.id, user2.id, table_id, 0.70)
+        .await
+        .expect("Win rate analysis should complete");
+
+    // Should NOT create win rate anomaly flag
+    let flags: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM collusion_flags
+         WHERE table_id = $1 AND flag_type = 'win_rate_anomaly'",
+    )
+    .bind(table_id)
+    .fetch_one(pool.as_ref())
+    .await
+    .expect("Should query flags");
+
+    assert_eq!(
+        flags, 0,
+        "Should not create flag for win rate below threshold"
+    );
+
+    cleanup_flags(&pool, user1.id).await;
+    cleanup_flags(&pool, user2.id).await;
+    cleanup_user(&pool, &username1).await;
+    cleanup_user(&pool, &username2).await;
+}
+
+#[tokio::test]
+async fn test_flag_review_workflow() {
+    // Test: Admin can review and mark flags
+    let (detector, auth_mgr, pool) = setup_managers().await;
+    let username1 = unique_username("review1");
+    let username2 = unique_username("review2");
+    let admin_username = unique_username("admin");
+    let table_id = 1009;
+    let same_ip = "192.168.99.99";
+
+    cleanup_user(&pool, &username1).await;
+    cleanup_user(&pool, &username2).await;
+    cleanup_user(&pool, &admin_username).await;
+
+    // Register users
+    let user1 = auth_mgr
+        .register(RegisterRequest {
+            username: username1.clone(),
+            password: "SecurePass123!".to_string(),
+            display_name: username1.to_string(),
+            email: None,
+        })
+        .await
+        .expect("User1 registration should succeed");
+
+    let user2 = auth_mgr
+        .register(RegisterRequest {
+            username: username2.clone(),
+            password: "SecurePass123!".to_string(),
+            display_name: username2.to_string(),
+            email: None,
+        })
+        .await
+        .expect("User2 registration should succeed");
+
+    let admin = auth_mgr
+        .register(RegisterRequest {
+            username: admin_username.clone(),
+            password: "AdminPass123!".to_string(),
+            display_name: "Admin".to_string(),
+            email: None,
+        })
+        .await
+        .expect("Admin registration should succeed");
+
+    cleanup_flags(&pool, user1.id).await;
+    cleanup_flags(&pool, user2.id).await;
+
+    // Create a flag by having users join with same IP
+    detector
+        .register_user_ip(user1.id, same_ip.to_string())
+        .await;
+    detector.add_player_to_table(table_id, user1.id).await;
+
+    detector
+        .register_user_ip(user2.id, same_ip.to_string())
+        .await;
+    detector
+        .check_same_ip_at_table(table_id, user2.id)
+        .await
+        .ok();
+    detector.add_player_to_table(table_id, user2.id).await;
+
+    // Get unreviewed flags
+    let unreviewed = detector
+        .get_unreviewed_flags()
+        .await
+        .expect("Should fetch unreviewed flags");
+
+    assert!(!unreviewed.is_empty(), "Should have unreviewed flags");
+
+    let flag_id = unreviewed[0].id;
+
+    // Mark flag as reviewed by admin
+    detector
+        .mark_flag_reviewed(flag_id, admin.id)
+        .await
+        .expect("Should mark flag as reviewed");
+
+    // Verify flag is now reviewed
+    let (reviewed, reviewer_id): (bool, Option<i64>) = sqlx::query_as(
+        "SELECT reviewed, reviewer_user_id FROM collusion_flags WHERE id = $1",
+    )
+    .bind(flag_id)
+    .fetch_one(pool.as_ref())
+    .await
+    .expect("Should fetch flag");
+
+    assert!(reviewed, "Flag should be marked as reviewed");
+    assert_eq!(
+        reviewer_id,
+        Some(admin.id),
+        "Flag should have admin as reviewer"
+    );
+
+    cleanup_flags(&pool, user1.id).await;
+    cleanup_flags(&pool, user2.id).await;
+    cleanup_user(&pool, &username1).await;
+    cleanup_user(&pool, &username2).await;
+    cleanup_user(&pool, &admin_username).await;
+}
+
+#[tokio::test]
+async fn test_get_user_flags() {
+    // Test: Can retrieve all flags for a specific user
+    let (detector, auth_mgr, pool) = setup_managers().await;
+    let username = unique_username("flaguser");
+    let username2 = unique_username("other");
+    let table_id = 1010;
+    let same_ip = "10.20.30.40";
+
+    cleanup_user(&pool, &username).await;
+    cleanup_user(&pool, &username2).await;
+
+    let user = auth_mgr
+        .register(RegisterRequest {
+            username: username.clone(),
+            password: "SecurePass123!".to_string(),
+            display_name: username.to_string(),
+            email: None,
+        })
+        .await
+        .expect("User registration should succeed");
+
+    let user2 = auth_mgr
+        .register(RegisterRequest {
+            username: username2.clone(),
+            password: "SecurePass123!".to_string(),
+            display_name: username2.to_string(),
+            email: None,
+        })
+        .await
+        .expect("User2 registration should succeed");
+
+    cleanup_flags(&pool, user.id).await;
+    cleanup_flags(&pool, user2.id).await;
+
+    // Create flags for user by adding user2 first, then user
+    detector
+        .register_user_ip(user2.id, same_ip.to_string())
+        .await;
+    detector.add_player_to_table(table_id, user2.id).await;
+
+    detector.register_user_ip(user.id, same_ip.to_string()).await;
+    // This should trigger flag creation for user
+    detector
+        .check_same_ip_at_table(table_id, user.id)
+        .await
+        .ok();
+    detector.add_player_to_table(table_id, user.id).await;
+
+    // Get flags for user
+    let user_flags = detector
+        .get_user_flags(user.id)
+        .await
+        .expect("Should get user flags");
+
+    assert!(!user_flags.is_empty(), "User should have flags");
+
+    // Verify all flags belong to the user
+    for flag in &user_flags {
+        assert_eq!(flag.user_id, user.id, "All flags should belong to user");
+    }
+
+    cleanup_flags(&pool, user.id).await;
+    cleanup_flags(&pool, user2.id).await;
+    cleanup_user(&pool, &username).await;
+    cleanup_user(&pool, &username2).await;
+}
+
+#[tokio::test]
+async fn test_multiple_players_same_ip() {
+    // Test: 3+ players with same IP at table
+    let (detector, auth_mgr, pool) = setup_managers().await;
+    let username1 = unique_username("multi1");
+    let username2 = unique_username("multi2");
+    let username3 = unique_username("multi3");
+    let table_id = 1011;
+    let same_ip = "192.168.1.123";
+
+    cleanup_user(&pool, &username1).await;
+    cleanup_user(&pool, &username2).await;
+    cleanup_user(&pool, &username3).await;
+
+    // Register 3 users
+    let user1 = auth_mgr
+        .register(RegisterRequest {
+            username: username1.clone(),
+            password: "SecurePass123!".to_string(),
+            display_name: username1.to_string(),
+            email: None,
+        })
+        .await
+        .expect("User1 registration should succeed");
+
+    let user2 = auth_mgr
+        .register(RegisterRequest {
+            username: username2.clone(),
+            password: "SecurePass123!".to_string(),
+            display_name: username2.to_string(),
+            email: None,
+        })
+        .await
+        .expect("User2 registration should succeed");
+
+    let user3 = auth_mgr
+        .register(RegisterRequest {
+            username: username3.clone(),
+            password: "SecurePass123!".to_string(),
+            display_name: username3.to_string(),
+            email: None,
+        })
+        .await
+        .expect("User3 registration should succeed");
+
+    cleanup_flags(&pool, user1.id).await;
+    cleanup_flags(&pool, user2.id).await;
+    cleanup_flags(&pool, user3.id).await;
+
+    // All 3 join with same IP
+    detector.register_user_ip(user1.id, same_ip.to_string()).await;
+    detector.add_player_to_table(table_id, user1.id).await;
+
+    detector.register_user_ip(user2.id, same_ip.to_string()).await;
+    let detected2 = detector.check_same_ip_at_table(table_id, user2.id).await.expect("Should check");
+    detector.add_player_to_table(table_id, user2.id).await;
+
+    detector.register_user_ip(user3.id, same_ip.to_string()).await;
+    let detected3 = detector.check_same_ip_at_table(table_id, user3.id).await.expect("Should check");
+    detector.add_player_to_table(table_id, user3.id).await;
+
+    assert!(detected2, "Should detect same IP for user2");
+    assert!(detected3, "Should detect same IP for user3");
+
+    // Should have created multiple flags
+    let flag_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM collusion_flags
+         WHERE table_id = $1 AND flag_type = 'same_ip_table'",
+    )
+    .bind(table_id)
+    .fetch_one(pool.as_ref())
+    .await
+    .expect("Should query flags");
+
+    assert!(flag_count >= 2, "Should have flags for each same-IP join");
+
+    cleanup_flags(&pool, user1.id).await;
+    cleanup_flags(&pool, user2.id).await;
+    cleanup_flags(&pool, user3.id).await;
+    cleanup_user(&pool, &username1).await;
+    cleanup_user(&pool, &username2).await;
+    cleanup_user(&pool, &username3).await;
+}

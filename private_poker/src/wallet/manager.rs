@@ -182,6 +182,7 @@ impl WalletManager {
                     Some(row) => {
                         let current_balance: i64 = row.get("balance");
                         return Err(WalletError::InsufficientBalance {
+                            user_id,
                             available: current_balance,
                             required: amount,
                         });
@@ -291,6 +292,7 @@ impl WalletManager {
                     Some(row) => {
                         let current_balance: i64 = row.get("balance");
                         return Err(WalletError::InsufficientBalance {
+                            user_id,
                             available: current_balance,
                             required: amount,
                         });
@@ -300,21 +302,30 @@ impl WalletManager {
             }
         };
 
-        // Atomically credit user wallet
-        let wallet_result = sqlx::query(
-            "UPDATE wallets
-             SET balance = balance + $1, updated_at = NOW()
-             WHERE user_id = $2
-             RETURNING balance",
-        )
-        .bind(amount)
-        .bind(user_id)
-        .fetch_optional(&mut *tx)
-        .await?;
+        // Get current balance first for overflow check
+        let current_wallet = sqlx::query("SELECT balance FROM wallets WHERE user_id = $1 FOR UPDATE")
+            .bind(user_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(WalletError::WalletNotFound(user_id))?;
 
-        let new_balance: i64 = wallet_result
-            .ok_or(WalletError::WalletNotFound(user_id))?
-            .get("balance");
+        let current_balance: i64 = current_wallet.get("balance");
+
+        // Check for overflow before updating
+        let new_balance = current_balance
+            .checked_add(amount)
+            .ok_or(WalletError::BalanceOverflow)?;
+
+        // Atomically credit user wallet
+        sqlx::query(
+            "UPDATE wallets
+             SET balance = $1, updated_at = NOW()
+             WHERE user_id = $2",
+        )
+        .bind(new_balance)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
 
         // Create credit entry
         self.create_entry(
@@ -384,8 +395,10 @@ impl WalletManager {
 
         let current_balance: i64 = wallet_row.get("balance");
 
-        // Credit wallet with faucet amount
-        let new_balance = current_balance + self.faucet_amount;
+        // Credit wallet with faucet amount (with overflow protection)
+        let new_balance = current_balance
+            .checked_add(self.faucet_amount)
+            .ok_or(WalletError::BalanceOverflow)?;
         sqlx::query("UPDATE wallets SET balance = $1, updated_at = NOW() WHERE user_id = $2")
             .bind(new_balance)
             .bind(user_id)

@@ -39,7 +39,7 @@ FLAGS:
 
 ENVIRONMENT:
   SERVER_BIND              Server bind address (e.g., 0.0.0.0:8080)
-  DATABASE_URL             PostgreSQL connection string
+  DATABASE_URL             PostgresSQL connection string
   JWT_SECRET               JWT signing secret
   PASSWORD_PEPPER          Password hashing pepper
   (See .env file for all configuration options)

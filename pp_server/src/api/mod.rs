@@ -252,7 +252,8 @@ async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
         .is_ok();
 
     // Check if table manager is responsive (has active tables count)
-    let tables_healthy = state.table_manager.table_count() >= 0;
+    let table_count = state.table_manager.table_count();
+    let tables_healthy = table_count >= 0;
 
     let overall_healthy = db_healthy && tables_healthy;
 
@@ -264,8 +265,12 @@ async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
 
     let response = json!({
         "status": if overall_healthy { "healthy" } else { "unhealthy" },
+        "version": env!("CARGO_PKG_VERSION"),
         "database": db_healthy,
-        "tables": tables_healthy,
+        "tables": {
+            "healthy": tables_healthy,
+            "active_count": table_count
+        },
         "timestamp": chrono::Utc::now().to_rfc3339(),
     });
 

@@ -88,12 +88,13 @@ impl ServerConfig {
                     .expect("Default bind address is valid")
             });
 
-        // Database configuration
+        // Database configuration - REQUIRED (no default for security)
         let database_url = database_url_override
             .or_else(|| std::env::var("DATABASE_URL").ok())
-            .unwrap_or_else(|| {
-                "postgres://poker_test:test_password@localhost/poker_test".to_string()
-            });
+            .ok_or(ConfigError::MissingRequired {
+                var: "DATABASE_URL".to_string(),
+                hint: "Set DATABASE_URL environment variable (e.g., postgresql://user:password@host/database)".to_string(),
+            })?;
 
         let database = DatabaseConfig {
             database_url,

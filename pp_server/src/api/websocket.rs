@@ -59,11 +59,15 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use futures_util::{SinkExt, StreamExt};
-use log::{error, info, warn};
+use tracing::{error, info, warn};
 use private_poker::entities::Action;
 use serde::{Deserialize, Serialize};
 
 use super::{AppState, rate_limiter::RateLimiter};
+
+/// Maximum allowed WebSocket message size in bytes (64 KB)
+/// Prevents DoS attacks via large message payloads
+const MAX_MESSAGE_SIZE: usize = 65536;
 
 #[derive(Debug, Deserialize)]
 pub struct WsQuery {
@@ -153,11 +157,29 @@ pub async fn websocket_handler(
 ) -> Response {
     // Verify token
     let user_id = match state.auth_manager.verify_access_token(&query.token) {
-        Ok(claims) => claims.sub,
-        Err(_) => {
+        Ok(claims) => {
+            tracing::debug!(
+                user_id = claims.sub,
+                table_id = table_id,
+                "WebSocket authentication successful"
+            );
+            claims.sub
+        }
+        Err(e) => {
+            tracing::warn!(
+                table_id = table_id,
+                error = %e,
+                "WebSocket authentication failed: invalid token"
+            );
             return (StatusCode::UNAUTHORIZED, "Invalid token").into_response();
         }
     };
+
+    tracing::info!(
+        user_id = user_id,
+        table_id = table_id,
+        "WebSocket connection established"
+    );
 
     ws.on_upgrade(move |socket| handle_socket(socket, table_id, user_id, state))
 }
@@ -282,11 +304,17 @@ async fn handle_socket(socket: WebSocket, table_id: i64, user_id: i64, state: Ap
     while let Some(msg) = receiver.next().await {
         match msg {
             Ok(Message::Text(text)) => {
-                // Check rate limits before processing
+                // Check rate limits FIRST (before any processing)
                 if !burst_limiter.check() {
                     warn!(
                         "Burst rate limit exceeded for user {} (table {}). Blocking message.",
                         user_id, table_id
+                    );
+                    tracing::warn!(
+                        user_id = user_id,
+                        table_id = table_id,
+                        limit_type = "burst",
+                        "WebSocket rate limit exceeded"
                     );
                     let error_response = ServerResponse::Error {
                         message: "Rate limit exceeded. Please slow down.".to_string(),
@@ -302,6 +330,12 @@ async fn handle_socket(socket: WebSocket, table_id: i64, user_id: i64, state: Ap
                         "Sustained rate limit exceeded for user {} (table {}). Blocking message.",
                         user_id, table_id
                     );
+                    tracing::warn!(
+                        user_id = user_id,
+                        table_id = table_id,
+                        limit_type = "sustained",
+                        "WebSocket rate limit exceeded"
+                    );
                     let error_response = ServerResponse::Error {
                         message: "Too many messages. Please wait before sending more.".to_string(),
                     };
@@ -311,9 +345,31 @@ async fn handle_socket(socket: WebSocket, table_id: i64, user_id: i64, state: Ap
                     continue;
                 }
 
+                // Check message size BEFORE parsing (DoS protection)
+                if text.len() > MAX_MESSAGE_SIZE {
+                    warn!(
+                        "Message too large ({} bytes) from user {} (table {}). Maximum allowed: {} bytes.",
+                        text.len(), user_id, table_id, MAX_MESSAGE_SIZE
+                    );
+                    tracing::warn!(
+                        user_id = user_id,
+                        table_id = table_id,
+                        message_size = text.len(),
+                        max_size = MAX_MESSAGE_SIZE,
+                        "WebSocket message too large (potential DoS attack)"
+                    );
+                    let error_response = ServerResponse::Error {
+                        message: format!("Message too large. Maximum size: {} bytes", MAX_MESSAGE_SIZE),
+                    };
+                    if let Ok(json) = serde_json::to_string(&error_response) {
+                        let _ = response_tx.send(json).await;
+                    }
+                    continue;
+                }
+
                 info!("Received message from user {}: {}", user_id, text);
 
-                // Parse and process message
+                // Now safe to parse message
                 let response = match serde_json::from_str::<ClientMessage>(&text) {
                     Ok(client_msg) => {
                         handle_client_message(client_msg, table_id, user_id, &state).await
@@ -335,10 +391,21 @@ async fn handle_socket(socket: WebSocket, table_id: i64, user_id: i64, state: Ap
             }
             Ok(Message::Close(_)) => {
                 info!("WebSocket closed: table={}, user={}", table_id, user_id);
+                tracing::info!(
+                    user_id = user_id,
+                    table_id = table_id,
+                    "WebSocket connection closed by client"
+                );
                 break;
             }
             Err(e) => {
                 error!("WebSocket error: {}", e);
+                tracing::error!(
+                    user_id = user_id,
+                    table_id = table_id,
+                    error = %e,
+                    "WebSocket connection error"
+                );
                 break;
             }
             _ => {}

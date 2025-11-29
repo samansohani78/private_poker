@@ -259,7 +259,7 @@ fn display_game_view(view: &GameView) {
 
             let cards_str = if !player.cards.is_empty() {
                 let mut s = String::new();
-                for card in &player.cards {
+                for card in player.cards.as_ref().iter() {
                     let _ = write!(&mut s, "{} ", format_card(card));
                 }
                 s.trim().to_string()

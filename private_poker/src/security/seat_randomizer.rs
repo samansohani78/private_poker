@@ -86,11 +86,12 @@ impl SeatRandomizer {
         current_assignments: &HashMap<i64, usize>,
     ) -> HashMap<i64, usize> {
         let user_ids: Vec<i64> = current_assignments.keys().copied().collect();
+        // Calculate max seats based on highest assigned seat + 1, default to 10 if empty
         let max_seats = current_assignments
             .values()
             .max()
             .map(|&v| v + 1)
-            .unwrap_or(10);
+            .unwrap_or(10); // Safe: unwrap_or provides default value, cannot panic
         self.assign_seats(&user_ids, max_seats)
     }
 }
@@ -139,7 +140,8 @@ mod tests {
         let seat = randomizer.find_random_seat(&occupied, 10);
         assert!(seat.is_some());
 
-        let seat_idx = seat.unwrap();
+        // Use expect() in tests for clearer failure messages
+        let seat_idx = seat.expect("Should find available seat when table not full");
         assert!(!occupied.contains(&seat_idx));
         assert!(seat_idx < 10);
     }

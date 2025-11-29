@@ -79,7 +79,11 @@ impl PrizeStructure {
     /// - 6-9 players: 60/40 split
     /// - 10+ players: 50/30/20 split
     pub fn standard(total_players: usize, buy_in: i64) -> Self {
-        let total_pool = (total_players as i64) * buy_in;
+        // Safely convert usize to i64 with overflow check
+        let total_players_i64 = i64::try_from(total_players)
+            .expect("Tournament player count exceeds i64::MAX");
+        let total_pool = total_players_i64.checked_mul(buy_in)
+            .expect("Prize pool calculation overflow");
 
         let payouts = match total_players {
             0..=1 => vec![total_pool],

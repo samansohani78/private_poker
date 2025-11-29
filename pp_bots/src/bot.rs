@@ -184,7 +184,7 @@ impl Bot {
                         .find(|p| p.user.name == self.client.username)
                     {
                         let mut cards = self.view.board.as_ref().clone();
-                        cards.extend(player.cards.clone());
+                        cards.extend(player.cards.as_ref().clone());
                         functional::prepare_hand(&mut cards);
                         self.hand = functional::eval(&cards);
                         self.starting_money = player.user.money;
@@ -253,7 +253,7 @@ impl Bot {
                             return Ok((self.hand.clone(), ActionChoices::default(), reward, true));
                         }
                         let mut cards = self.view.board.as_ref().clone();
-                        cards.extend(player.cards.clone());
+                        cards.extend(player.cards.as_ref().clone());
                         functional::prepare_hand(&mut cards);
                         self.hand = functional::eval(&cards);
                     // We were forcibly moved to spectate because we don't have enough

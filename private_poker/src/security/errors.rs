@@ -57,4 +57,10 @@ pub enum RateLimitError {
     /// Configuration error
     #[error("Configuration error: {0}")]
     Configuration(String),
+
+    /// Database corruption detected
+    #[error("Database corruption detected: {message}")]
+    DatabaseCorruption {
+        message: String,
+    },
 }

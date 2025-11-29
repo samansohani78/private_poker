@@ -11,9 +11,18 @@ DROP INDEX IF EXISTS idx_rate_limit_endpoint_identifier;
 
 -- Add unique constraint on (endpoint, identifier) combination
 -- This allows ON CONFLICT clauses to work properly
-ALTER TABLE rate_limit_attempts
-ADD CONSTRAINT rate_limit_attempts_endpoint_identifier_unique
-UNIQUE (endpoint, identifier);
+-- Use IF NOT EXISTS equivalent by catching the error
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'rate_limit_attempts_endpoint_identifier_unique'
+    ) THEN
+        ALTER TABLE rate_limit_attempts
+        ADD CONSTRAINT rate_limit_attempts_endpoint_identifier_unique
+        UNIQUE (endpoint, identifier);
+    END IF;
+END $$;
 
 -- Note: This constraint ensures each (endpoint, identifier) pair appears only once,
 -- which is the intended behavior for rate limiting per endpoint per user/IP

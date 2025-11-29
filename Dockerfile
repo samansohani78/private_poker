@@ -1,4 +1,4 @@
-FROM rust:alpine AS chef
+FROM rust:1.91-alpine AS chef
 
 RUN apk update \
     && apk add --no-cache \

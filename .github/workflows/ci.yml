@@ -1,37 +1,16 @@
-name: Continuous Integration
+name: CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main, develop ]
   pull_request:
-    branches:
-      - main
+    branches: [ main, develop ]
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
 jobs:
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          components: clippy, rustfmt
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Run clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -41,7 +20,7 @@ jobs:
         image: postgres:14
         env:
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: poker_test
+          POSTGRES_DB: poker_db
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -51,38 +30,49 @@ jobs:
           - 5432:5432
 
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v3
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
 
-      - uses: Swatinem/rust-cache@v2
+    - name: Cache cargo registry
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/registry
+        key: cargo-registry
 
-      - name: Install sqlx-cli
-        run: cargo install sqlx-cli --no-default-features --features postgres
+    - name: Cache cargo index
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/git
+        key: cargo-git
 
-      - name: Run migrations
-        run: sqlx migrate run
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/poker_test
+    - name: Cache cargo build
+      uses: actions/cache@v3
+      with:
+        path: target
+        key: cargo-build-target
 
-      - name: Run tests
-        run: cargo test --workspace
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/poker_test
+    - name: Install sqlx-cli
+      run: cargo install sqlx-cli --no-default-features --features postgres
 
-  build:
-    name: Build (Release)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    - name: Run database migrations
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/poker_db
+      run: sqlx migrate run
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
+    - name: Check formatting
+      run: cargo fmt --all -- --check
 
-      - uses: Swatinem/rust-cache@v2
+    - name: Run clippy
+      run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Build release
-        run: cargo build --release --workspace
+    - name: Build
+      run: cargo build --verbose --workspace
+
+    - name: Run tests
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/poker_db
+      run: cargo test --verbose --workspace

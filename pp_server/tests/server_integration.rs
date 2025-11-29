@@ -90,7 +90,10 @@ async fn test_health_check_endpoint() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(json["status"], "healthy");
     assert_eq!(json["database"], true);
-    assert_eq!(json["tables"], true);
+    assert_eq!(json["tables"]["healthy"], true);
+    assert!(json["tables"]["active_count"].is_number());
+    assert!(json["version"].is_string());
+    assert!(json["timestamp"].is_string());
 }
 
 // ============================================================================

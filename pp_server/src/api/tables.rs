@@ -33,6 +33,7 @@ use private_poker::{game::entities::Action, table::messages::TableMessage};
 use serde::{Deserialize, Serialize};
 
 use super::AppState;
+use super::request_id::RequestId;
 
 #[derive(Debug, Serialize)]
 pub struct TableListItem {
@@ -234,27 +235,53 @@ pub async fn get_table(
 /// - User is added to waitlist if table is full
 pub async fn join_table(
     State(state): State<AppState>,
+    RequestId(request_id): RequestId,
     Extension(user_id): Extension<i64>,
     Path(table_id): Path<i64>,
     Json(request): Json<JoinTableRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
+    let start = std::time::Instant::now();
+
     // Get username from user_id
     // For now, use placeholder
     let username = format!("user_{}", user_id);
 
-    match state
+    let result = state
         .table_manager
         .join_table(
             table_id,
             user_id,
-            username,
+            username.clone(),
             request.buy_in_amount,
             request.passphrase,
         )
-        .await
-    {
-        Ok(_) => Ok(StatusCode::OK),
-        Err(e) => Err((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e }))),
+        .await;
+
+    let duration_ms = start.elapsed().as_millis() as u64;
+
+    match result {
+        Ok(_) => {
+            tracing::info!(
+                request_id = %request_id,
+                user_id = user_id,
+                table_id = table_id,
+                buy_in = request.buy_in_amount,
+                duration_ms = duration_ms,
+                "User joined table successfully"
+            );
+            Ok(StatusCode::OK)
+        }
+        Err(e) => {
+            tracing::warn!(
+                request_id = %request_id,
+                user_id = user_id,
+                table_id = table_id,
+                error = %e,
+                duration_ms = duration_ms,
+                "Failed to join table"
+            );
+            Err((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })))
+        }
     }
 }
 
@@ -287,12 +314,30 @@ pub async fn join_table(
 /// - Other players are notified of the departure
 pub async fn leave_table(
     State(state): State<AppState>,
+    RequestId(request_id): RequestId,
     Extension(user_id): Extension<i64>,
     Path(table_id): Path<i64>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     match state.table_manager.leave_table(table_id, user_id).await {
-        Ok(_) => Ok(StatusCode::OK),
-        Err(e) => Err((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e }))),
+        Ok(_) => {
+            tracing::info!(
+                request_id = %request_id,
+                user_id = user_id,
+                table_id = table_id,
+                "User left table successfully"
+            );
+            Ok(StatusCode::OK)
+        }
+        Err(e) => {
+            tracing::warn!(
+                request_id = %request_id,
+                user_id = user_id,
+                table_id = table_id,
+                error = %e,
+                "Failed to leave table"
+            );
+            Err((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })))
+        }
     }
 }
 
@@ -342,11 +387,13 @@ pub async fn leave_table(
 /// - **AllIn**: Bet all remaining chips
 pub async fn take_action(
     State(state): State<AppState>,
+    RequestId(request_id): RequestId,
     Extension(user_id): Extension<i64>,
     Path(table_id): Path<i64>,
     Json(request): Json<TakeActionRequest>,
 ) -> Result<StatusCode, (StatusCode, Json<ErrorResponse>)> {
     let action: Action = request.action.into();
+    let action_debug = format!("{:?}", action); // Save for logging before action is moved
 
     // Get table handle
     let table_handle = match state.table_manager.get_table(table_id).await {
@@ -378,40 +425,105 @@ pub async fn take_action(
 
     match response_rx.await {
         Ok(response) => match response {
-            private_poker::table::messages::TableResponse::Success => Ok(StatusCode::OK),
-            private_poker::table::messages::TableResponse::SuccessWithMessage(_) => {
+            private_poker::table::messages::TableResponse::Success => {
+                tracing::debug!(
+                    user_id = user_id,
+                    table_id = table_id,
+                    action = %action_debug,
+                    "Action taken successfully"
+                );
                 Ok(StatusCode::OK)
             }
-            private_poker::table::messages::TableResponse::Error(e) => {
-                Err((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })))
+            private_poker::table::messages::TableResponse::SuccessWithMessage(_) => {
+                tracing::debug!(
+                    user_id = user_id,
+                    table_id = table_id,
+                    action = %action_debug,
+                    "Action taken successfully"
+                );
+                Ok(StatusCode::OK)
             }
-            private_poker::table::messages::TableResponse::TableFull => Err((
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: "Table is full".to_string(),
-                }),
-            )),
-            private_poker::table::messages::TableResponse::NotYourTurn => Err((
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: "Not your turn".to_string(),
-                }),
-            )),
-            private_poker::table::messages::TableResponse::InvalidAction(e) => {
-                Err((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })))
+            private_poker::table::messages::TableResponse::Error(ref e) => {
+                tracing::warn!(
+                    request_id = %request_id,
+                    user_id = user_id,
+                    table_id = table_id,
+                    action = %action_debug,
+                    error = %e,
+                    "Action failed"
+                );
+                Err((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e.clone() })))
             }
-            _ => Err((
-                StatusCode::BAD_REQUEST,
-                Json(ErrorResponse {
-                    error: "Operation failed".to_string(),
-                }),
-            )),
+            private_poker::table::messages::TableResponse::TableFull => {
+                tracing::warn!(
+                    request_id = %request_id,
+                    user_id = user_id,
+                    table_id = table_id,
+                    "Action failed: table is full"
+                );
+                Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: format!("Table {} is full, cannot perform action", table_id),
+                    }),
+                ))
+            }
+            private_poker::table::messages::TableResponse::NotYourTurn => {
+                tracing::warn!(
+                    request_id = %request_id,
+                    user_id = user_id,
+                    table_id = table_id,
+                    action = %action_debug,
+                    "Action failed: not player's turn"
+                );
+                Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: format!("Not your turn to act at table {}", table_id),
+                    }),
+                ))
+            }
+            private_poker::table::messages::TableResponse::InvalidAction(ref e) => {
+                tracing::warn!(
+                    request_id = %request_id,
+                    user_id = user_id,
+                    table_id = table_id,
+                    action = %action_debug,
+                    error = %e,
+                    "Invalid action"
+                );
+                Err((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e.clone() })))
+            }
+            _ => {
+                tracing::warn!(
+                    request_id = %request_id,
+                    user_id = user_id,
+                    table_id = table_id,
+                    action = %action_debug,
+                    "Action failed: operation failed"
+                );
+                Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: format!("Failed to take action {} at table {}", action_debug, table_id),
+                    }),
+                ))
+            }
         },
-        Err(_) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ErrorResponse {
-                error: "Response channel closed".to_string(),
-            }),
-        )),
+        Err(_) => {
+            tracing::error!(
+                request_id = %request_id,
+                user_id = user_id,
+                table_id = table_id,
+                action = %action_debug,
+                "Response channel closed"
+            );
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: "Response channel closed".to_string(),
+                }),
+            ))
+        }
     }
 }

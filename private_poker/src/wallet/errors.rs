@@ -10,8 +10,12 @@ pub enum WalletError {
     Database(#[from] sqlx::Error),
 
     /// Insufficient balance
-    #[error("Insufficient balance: available {available}, required {required}")]
-    InsufficientBalance { available: i64, required: i64 },
+    #[error("Insufficient balance for user {user_id}: available {available}, required {required}")]
+    InsufficientBalance {
+        user_id: i64,
+        available: i64,
+        required: i64,
+    },
 
     /// Wallet not found
     #[error("Wallet not found for user {0}")]
@@ -32,6 +36,10 @@ pub enum WalletError {
     /// Faucet claim not available
     #[error("Faucet claim not available until {0}")]
     FaucetNotAvailable(chrono::DateTime<chrono::Utc>),
+
+    /// Balance overflow (arithmetic overflow prevented)
+    #[error("Balance overflow: operation would exceed maximum balance")]
+    BalanceOverflow,
 
     /// Currency mismatch
     #[error("Currency mismatch: expected {expected}, got {got}")]

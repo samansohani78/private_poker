@@ -53,6 +53,16 @@ pub enum UserError {
     UserNotPlaying,
     #[error("already showing hand")]
     UserAlreadyShowingHand,
+    #[error("invalid game state: waitlist index {0} out of bounds")]
+    InvalidWaitlistIndex(usize),
+    #[error("invalid game state: player index {0} out of bounds")]
+    InvalidPlayerIndex(usize),
+    #[error("invalid game state: position not found")]
+    InvalidPosition,
+    #[error("invalid game state: seat not found")]
+    InvalidSeat,
+    #[error("invalid game state: internal consistency error")]
+    InternalStateError,
 }
 
 /// Events that occur during gameplay
@@ -226,6 +236,12 @@ impl From<GameSettings> for GameData {
 #[enum_dispatch]
 pub trait GameStateManagement {
     fn drain_events(&mut self) -> VecDeque<GameEvent>;
+
+    /// Get game views for all players
+    ///
+    /// # Important
+    /// This function's return value should be used - ignoring it wastes computation
+    #[must_use]
     fn get_views(&self) -> GameViews;
 }
 

@@ -4,53 +4,198 @@ use super::models::{BotPlayer, DifficultyParams};
 use crate::game::entities::{Action, Card};
 use rand::Rng;
 
+// === Hand Strength Base Values ===
+// These represent the baseline strength for each poker hand rank
+
+/// Hand strength for high card (weakest hand: 10%)
+const STRENGTH_HIGH_CARD: f32 = 0.1;
+
+/// Hand strength for one pair (25% = beats high card)
+const STRENGTH_ONE_PAIR: f32 = 0.25;
+
+/// Hand strength for two pair (40%)
+const STRENGTH_TWO_PAIR: f32 = 0.40;
+
+/// Hand strength for three of a kind (55%)
+const STRENGTH_THREE_OF_A_KIND: f32 = 0.55;
+
+/// Hand strength for straight (70%)
+const STRENGTH_STRAIGHT: f32 = 0.70;
+
+/// Hand strength for flush (75%)
+const STRENGTH_FLUSH: f32 = 0.75;
+
+/// Hand strength for full house (85%)
+const STRENGTH_FULL_HOUSE: f32 = 0.85;
+
+/// Hand strength for four of a kind (95%)
+const STRENGTH_FOUR_OF_A_KIND: f32 = 0.95;
+
+/// Hand strength for straight flush (99% = nearly unbeatable)
+const STRENGTH_STRAIGHT_FLUSH: f32 = 0.99;
+
 /// Configuration for bot decision-making thresholds and multipliers.
 ///
-/// These values control bot behavior and can be tuned for different
-/// play styles or difficulty levels.
+/// All threshold values are hand strength floats in range [0.0, 1.0].
+/// Higher threshold = more conservative (tighter play).
+///
+/// # Pre-flop Thresholds
+///
+/// These determine when bots act based on raw hand strength:
+/// - Easy bots play loose (fold < 8%, raise > 20%)
+/// - Standard bots play balanced (fold < 12%, raise > 28%)
+/// - TAG bots play tight (fold < 18%, raise > 33%)
+///
+/// # Examples
+///
+/// ```
+/// use private_poker::bot::decision::BotDecisionConfig;
+///
+/// let config = BotDecisionConfig::default();
+/// assert_eq!(config.easy_fold_threshold, 0.08); // Folds bottom 8%
+/// assert_eq!(config.easy_raise_threshold, 0.20); // Raises top 20%
+/// ```
 #[derive(Debug, Clone)]
 pub struct BotDecisionConfig {
-    /// Easy bot fold threshold (hand strength below this = fold)
+    /// Hand strength below this = fold (Easy bot, pre-flop).
+    ///
+    /// **Range**: 0.05-0.15 (typical: 0.08)
+    /// **Effect**: 0.08 = folds 92% of hands, plays very loose
+    /// **Lower** = looser play (calls more weak hands)
     pub easy_fold_threshold: f32,
-    /// Easy bot raise threshold (hand strength above this = raise)
+
+    /// Hand strength above this = raise (Easy bot, pre-flop).
+    ///
+    /// **Range**: 0.15-0.30 (typical: 0.20)
+    /// **Effect**: 0.20 = raises top 20% of hands
+    /// **Higher** = tighter play (only raises premium hands)
     pub easy_raise_threshold: f32,
-    /// Standard bot fold threshold
+
+    /// Hand strength below this = fold (Standard bot, pre-flop).
+    ///
+    /// **Range**: 0.10-0.18 (typical: 0.12)
+    /// **Effect**: 0.12 = folds 88% of hands, balanced TAG play
     pub standard_fold_threshold: f32,
-    /// Standard bot raise threshold
+
+    /// Hand strength above this = raise (Standard bot, pre-flop).
+    ///
+    /// **Range**: 0.25-0.35 (typical: 0.28)
+    /// **Effect**: 0.28 = raises top 28% of hands
     pub standard_raise_threshold: f32,
-    /// TAG bot fold threshold
+
+    /// Hand strength below this = fold (TAG bot, pre-flop).
+    ///
+    /// **Range**: 0.15-0.25 (typical: 0.18)
+    /// **Effect**: 0.18 = folds 82% of hands, very tight play
     pub tag_fold_threshold: f32,
-    /// TAG bot raise threshold
+
+    /// Hand strength above this = raise (TAG bot, pre-flop).
+    ///
+    /// **Range**: 0.30-0.40 (typical: 0.33)
+    /// **Effect**: 0.33 = raises top 33% of hands
     pub tag_raise_threshold: f32,
-    /// Bluff size multiplier (as fraction of pot)
+
+    /// Bluff size as a multiplier of the current pot.
+    ///
+    /// **Range**: 1.0-3.0 (typical: 1.5)
+    /// **Effect**: 1.5 = bets 150% of pot when bluffing
+    /// **Higher** = more intimidating bluffs (expensive for opponents)
     pub bluff_size_multiplier: f32,
-    /// Pot odds bonus threshold
+
+    /// Pot odds threshold for receiving bonus to hand strength.
+    ///
+    /// **Range**: 0.2-0.4 (typical: 0.25)
+    /// **Effect**: If pot odds > 0.25 (4:1), add bonus to hand strength
+    /// **Lower** = more willing to chase draws
     pub pot_odds_bonus_threshold: f32,
-    /// Pot odds bonus value
+
+    /// Bonus value added to hand strength when pot odds are good.
+    ///
+    /// **Range**: 0.1-0.3 (typical: 0.2)
+    /// **Effect**: Adds 20% to hand strength when pot odds favorable
+    /// **Higher** = more aggressive draw chasing
     pub pot_odds_bonus_value: f32,
-    /// Base call probability for medium hands
+
+    /// Base probability of calling with medium-strength hands.
+    ///
+    /// **Range**: 0.2-0.5 (typical: 0.3)
+    /// **Effect**: 30% base chance to call (modified by aggression)
+    /// **Higher** = more calling stations (passive play)
     pub base_call_probability: f32,
-    /// Aggression factor divisor for call probability
+
+    /// Divisor for aggression factor when calculating call probability.
+    ///
+    /// **Range**: 3.0-7.0 (typical: 5.0)
+    /// **Effect**: call_prob = base + (aggression / divisor)
+    /// **Lower** = aggression has more impact on calling
     pub call_aggression_divisor: f32,
-    /// Base raise probability for strong hands
+
+    /// Base probability of raising with strong hands.
+    ///
+    /// **Range**: 0.3-0.6 (typical: 0.4)
+    /// **Effect**: 40% base chance to raise (modified by aggression)
+    /// **Higher** = more aggressive betting
     pub base_raise_probability: f32,
-    /// Aggression factor divisor for raise probability
+
+    /// Divisor for aggression factor when calculating raise probability.
+    ///
+    /// **Range**: 2.0-6.0 (typical: 4.0)
+    /// **Effect**: raise_prob = base + (aggression / divisor)
+    /// **Lower** = aggression has more impact on raising
     pub raise_aggression_divisor: f32,
-    /// Passive bot raise multiplier
+
+    /// Raise multiplier for passive bots (aggression < 1.0).
+    ///
+    /// **Range**: 1.5-3.0 (typical: 2.0)
+    /// **Effect**: Passive bots raise 2x the big blind
+    /// **Higher** = larger raises even with low aggression
     pub passive_raise_multiplier: f32,
-    /// Moderate bot raise multiplier
+
+    /// Raise multiplier for moderate bots (aggression 1.0-2.0).
+    ///
+    /// **Range**: 2.0-3.5 (typical: 2.5)
+    /// **Effect**: Moderate bots raise 2.5x the big blind
     pub moderate_raise_multiplier: f32,
-    /// Aggressive bot raise multiplier
+
+    /// Raise multiplier for aggressive bots (aggression > 2.0).
+    ///
+    /// **Range**: 2.5-4.0 (typical: 3.0)
+    /// **Effect**: Aggressive bots raise 3x the big blind
+    /// **Higher** = larger raises, more intimidating
     pub aggressive_raise_multiplier: f32,
-    /// Raise variance range (±percentage)
+
+    /// Variance range for raise sizing (±percentage).
+    ///
+    /// **Range**: 0.1-0.3 (typical: 0.2)
+    /// **Effect**: Raise amount varies by ±20% randomly
+    /// **Higher** = more unpredictable bet sizing
     pub raise_variance: f32,
-    /// Late position bonus (button/cutoff)
+
+    /// Bonus to hand strength when in late position (button/cutoff).
+    ///
+    /// **Range**: 0.05-0.12 (typical: 0.08)
+    /// **Effect**: Adds 8% to hand strength in late position
+    /// **Higher** = plays looser on the button
     pub late_position_bonus: f32,
-    /// Middle position bonus
+
+    /// Bonus to hand strength when in middle position.
+    ///
+    /// **Range**: 0.02-0.06 (typical: 0.04)
+    /// **Effect**: Adds 4% to hand strength in middle position
     pub middle_position_bonus: f32,
-    /// Early-middle position penalty
+
+    /// Penalty to hand strength when in early-middle position.
+    ///
+    /// **Range**: -0.05 to -0.01 (typical: -0.03)
+    /// **Effect**: Reduces hand strength by 3% in early-middle position
+    /// **More negative** = plays tighter from early position
     pub early_middle_position_penalty: f32,
-    /// UTG (under the gun) penalty
+
+    /// Penalty to hand strength when in UTG (under the gun) position.
+    ///
+    /// **Range**: -0.08 to -0.03 (typical: -0.05)
+    /// **Effect**: Reduces hand strength by 5% from UTG
+    /// **More negative** = plays very tight from earliest position
     pub utg_position_penalty: f32,
 }
 
@@ -385,6 +530,12 @@ impl BotDecisionMaker {
             return 0.0; // Heads-up, position less critical
         }
 
+        // Defensive check: prevent division by zero
+        if players_remaining == 0 {
+            log::warn!("players_remaining is 0, returning neutral position adjustment");
+            return 0.0; // Neutral adjustment
+        }
+
         // Button (0) gets max bonus, progresses toward early position
         let relative_pos = pos as f32 / players_remaining as f32;
 
@@ -433,15 +584,15 @@ impl BotDecisionMaker {
 
         // Base strength on hand rank
         let base_strength = match hand[0].rank {
-            Rank::HighCard => 0.1,
-            Rank::OnePair => 0.25,
-            Rank::TwoPair => 0.40,
-            Rank::ThreeOfAKind => 0.55,
-            Rank::Straight => 0.70,
-            Rank::Flush => 0.75,
-            Rank::FullHouse => 0.85,
-            Rank::FourOfAKind => 0.95,
-            Rank::StraightFlush => 0.99,
+            Rank::HighCard => STRENGTH_HIGH_CARD,
+            Rank::OnePair => STRENGTH_ONE_PAIR,
+            Rank::TwoPair => STRENGTH_TWO_PAIR,
+            Rank::ThreeOfAKind => STRENGTH_THREE_OF_A_KIND,
+            Rank::Straight => STRENGTH_STRAIGHT,
+            Rank::Flush => STRENGTH_FLUSH,
+            Rank::FullHouse => STRENGTH_FULL_HOUSE,
+            Rank::FourOfAKind => STRENGTH_FOUR_OF_A_KIND,
+            Rank::StraightFlush => STRENGTH_STRAIGHT_FLUSH,
         };
 
         // Adjust for kickers (higher values = stronger hand within same rank)

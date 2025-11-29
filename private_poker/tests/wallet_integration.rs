@@ -200,7 +200,7 @@ async fn test_transfer_to_escrow() {
         .expect("Should get wallet");
 
     // Create table escrow
-    sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0)")
+    sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0) ON CONFLICT (table_id) DO UPDATE SET balance = 0")
         .bind(table_id)
         .execute(pool.as_ref())
         .await
@@ -269,8 +269,8 @@ async fn test_transfer_from_escrow() {
         .await
         .expect("Faucet claim should succeed");
 
-    // Create table escrow
-    sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0)")
+    // Create table escrow (using ON CONFLICT to handle duplicates)
+    sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0) ON CONFLICT (table_id) DO UPDATE SET balance = 0")
         .bind(table_id)
         .execute(pool.as_ref())
         .await
@@ -324,7 +324,7 @@ async fn test_transfer_from_escrow() {
 #[tokio::test]
 async fn test_escrow_idempotency() {
     let (wallet_mgr, auth_mgr, pool) = setup_managers().await;
-    let username = "test_idempotency";
+    let username = "test_escrow_idem";
     let table_id = 997;
     cleanup_user(&pool, username).await;
     cleanup_table_escrow(&pool, table_id).await;
@@ -346,7 +346,7 @@ async fn test_escrow_idempotency() {
         .expect("Faucet claim should succeed");
 
     // Create table escrow
-    sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0)")
+    sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0) ON CONFLICT (table_id) DO UPDATE SET balance = 0")
         .bind(table_id)
         .execute(pool.as_ref())
         .await
@@ -409,7 +409,7 @@ async fn test_insufficient_funds() {
         .expect("Registration should succeed");
 
     // Create table escrow
-    sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0)")
+    sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0) ON CONFLICT (table_id) DO UPDATE SET balance = 0")
         .bind(table_id)
         .execute(pool.as_ref())
         .await
@@ -539,7 +539,7 @@ async fn test_get_transaction_history() {
         .expect("Faucet claim should succeed");
 
     // Create table escrow
-    sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0)")
+    sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0) ON CONFLICT (table_id) DO UPDATE SET balance = 0")
         .bind(table_id)
         .execute(pool.as_ref())
         .await
@@ -569,6 +569,456 @@ async fn test_get_transaction_history() {
     let has_tx2 = entries.iter().any(|e| e.amount == -200);
     assert!(has_tx1, "Should find first transfer in history");
     assert!(has_tx2, "Should find second transfer in history");
+
+    cleanup_table_escrow(&pool, table_id).await;
+    cleanup_user(&pool, username).await;
+}
+
+// === Edge Case Tests ===
+
+#[tokio::test]
+async fn test_overflow_protection_faucet_at_max() {
+    // Test: Claiming faucet when balance is near i64::MAX should prevent overflow
+    let (wallet_mgr, auth_mgr, pool) = setup_managers().await;
+    let username = "test_overflow_max";
+    cleanup_user(&pool, username).await;
+
+    // Register user
+    let user = auth_mgr
+        .register(RegisterRequest {
+            username: username.to_string(),
+            password: "SecurePass123!".to_string(),
+            display_name: username.to_string(),
+            email: None,
+        })
+        .await
+        .expect("Registration should succeed");
+
+    // Manually set balance near i64::MAX
+    let near_max = i64::MAX - 500; // Less than faucet amount
+    sqlx::query("UPDATE wallets SET balance = $1 WHERE user_id = $2")
+        .bind(near_max)
+        .bind(user.id)
+        .execute(pool.as_ref())
+        .await
+        .expect("Should update balance");
+
+    // Try to claim faucet - should fail with overflow error
+    let result = wallet_mgr.claim_faucet(user.id).await;
+    assert!(
+        result.is_err(),
+        "Faucet claim should fail when it would overflow"
+    );
+
+    cleanup_user(&pool, username).await;
+}
+
+#[tokio::test]
+async fn test_overflow_protection_escrow_transfer() {
+    // Test: Transferring from escrow when it would cause overflow
+    let (wallet_mgr, _auth_mgr, pool) = setup_managers().await;
+    let username = "test_overflow_escrow";
+    let table_id = 998;
+    cleanup_user(&pool, username).await;
+    cleanup_table_escrow(&pool, table_id).await;
+
+    // Create user manually
+    let user_id = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO users (username, password_hash, display_name) VALUES ($1, 'hash', $1) RETURNING id"
+    )
+    .bind(username)
+    .fetch_one(pool.as_ref())
+    .await
+    .expect("Should create user");
+
+    // Create wallet with near-max balance
+    let near_max = i64::MAX - 500;
+    sqlx::query("INSERT INTO wallets (user_id, balance) VALUES ($1, $2)")
+        .bind(user_id)
+        .bind(near_max)
+        .execute(pool.as_ref())
+        .await
+        .expect("Should create wallet");
+
+    // Create table escrow with some balance
+    sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 1000) ON CONFLICT (table_id) DO UPDATE SET balance = 1000")
+        .bind(table_id)
+        .execute(pool.as_ref())
+        .await
+        .expect("Should create table escrow");
+
+    // Try to transfer from escrow - should fail
+    let result = wallet_mgr
+        .transfer_from_escrow(user_id, table_id, 1000, unique_key("overflow"))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "Transfer from escrow should fail when it would overflow"
+    );
+
+    cleanup_table_escrow(&pool, table_id).await;
+    cleanup_user(&pool, username).await;
+}
+
+#[tokio::test]
+async fn test_underflow_protection_insufficient_funds() {
+    // Test: Transferring more than balance should fail
+    let (wallet_mgr, auth_mgr, pool) = setup_managers().await;
+    let username = "test_underflow";
+    let table_id = 999;
+    cleanup_user(&pool, username).await;
+    cleanup_table_escrow(&pool, table_id).await;
+
+    // Register user
+    let user = auth_mgr
+        .register(RegisterRequest {
+            username: username.to_string(),
+            password: "SecurePass123!".to_string(),
+            display_name: username.to_string(),
+            email: None,
+        })
+        .await
+        .expect("Registration should succeed");
+
+    // Claim faucet to get some balance
+    wallet_mgr
+        .claim_faucet(user.id)
+        .await
+        .ok(); // May succeed or fail if already claimed
+
+    // Get current balance
+    let wallet = wallet_mgr
+        .get_wallet(user.id)
+        .await
+        .expect("Should get wallet");
+
+    let current_balance = wallet.balance;
+    assert!(current_balance > 0, "Should have some balance");
+
+    // Create table escrow
+    sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0) ON CONFLICT (table_id) DO UPDATE SET balance = 0")
+        .bind(table_id)
+        .execute(pool.as_ref())
+        .await
+        .expect("Should create table escrow");
+
+    // Try to transfer more than balance
+    let result = wallet_mgr
+        .transfer_to_escrow(user.id, table_id, current_balance + 1000, unique_key("underflow"))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "Transfer should fail when amount exceeds balance: {:?}",
+        result
+    );
+
+    cleanup_table_escrow(&pool, table_id).await;
+    cleanup_user(&pool, username).await;
+}
+
+#[tokio::test]
+async fn test_concurrent_faucet_claims() {
+    // Test: Concurrent faucet claims should be safe (no corruption)
+    let (wallet_mgr, auth_mgr, pool) = setup_managers().await;
+    let wallet_mgr = Arc::new(wallet_mgr);
+    let username = "test_concur_faucet";
+    cleanup_user(&pool, username).await;
+
+    // Register user
+    let user = auth_mgr
+        .register(RegisterRequest {
+            username: username.to_string(),
+            password: "SecurePass123!".to_string(),
+            display_name: username.to_string(),
+            email: None,
+        })
+        .await
+        .expect("Registration should succeed");
+
+    // Get initial balance
+    let initial_wallet = wallet_mgr
+        .get_wallet(user.id)
+        .await
+        .expect("Should get wallet");
+    let initial_balance = initial_wallet.balance;
+
+    // Try to claim faucet concurrently from multiple threads
+    let mut handles = vec![];
+    for _ in 0..10 {
+        let mgr = wallet_mgr.clone();
+        let uid = user.id;
+        handles.push(tokio::spawn(async move { mgr.claim_faucet(uid).await }));
+    }
+
+    // Collect results
+    let mut success_count = 0;
+    for handle in handles {
+        if handle.await.expect("Task should complete").is_ok() {
+            success_count += 1;
+        }
+    }
+
+    // At least one should succeed
+    assert!(
+        success_count >= 1,
+        "At least one faucet claim should succeed"
+    );
+
+    // Verify balance increased (concurrency is safe)
+    let final_wallet = wallet_mgr
+        .get_wallet(user.id)
+        .await
+        .expect("Should get wallet");
+
+    assert!(
+        final_wallet.balance > initial_balance,
+        "Balance should have increased"
+    );
+    assert!(
+        final_wallet.balance % 1000 == 0,
+        "Balance should be a multiple of 1000 (faucet amount)"
+    );
+
+    cleanup_user(&pool, username).await;
+}
+
+#[tokio::test]
+async fn test_concurrent_escrow_operations() {
+    // Test: Concurrent escrow operations should maintain consistency
+    let (wallet_mgr, auth_mgr, pool) = setup_managers().await;
+    let wallet_mgr = Arc::new(wallet_mgr);
+    let username = "test_concur_escrow";
+    let table_id = 1000;
+    cleanup_user(&pool, username).await;
+    cleanup_table_escrow(&pool, table_id).await;
+
+    // Register user and give them chips
+    let user = auth_mgr
+        .register(RegisterRequest {
+            username: username.to_string(),
+            password: "SecurePass123!".to_string(),
+            display_name: username.to_string(),
+            email: None,
+        })
+        .await
+        .expect("Registration should succeed");
+
+    // Set balance to 10,000
+    sqlx::query("UPDATE wallets SET balance = 10000 WHERE user_id = $1")
+        .bind(user.id)
+        .execute(pool.as_ref())
+        .await
+        .expect("Should update balance");
+
+    // Create table escrow
+    sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0) ON CONFLICT (table_id) DO UPDATE SET balance = 0")
+        .bind(table_id)
+        .execute(pool.as_ref())
+        .await
+        .expect("Should create table escrow");
+
+    // Transfer to escrow concurrently (10 threads × 100 chips each)
+    let mut handles = vec![];
+    for i in 0..10 {
+        let mgr = wallet_mgr.clone();
+        let uid = user.id;
+        let tid = table_id;
+        let key = unique_key(&format!("concurrent_{}", i));
+        handles.push(tokio::spawn(async move {
+            mgr.transfer_to_escrow(uid, tid, 100, key).await
+        }));
+    }
+
+    // Wait for all transfers
+    let mut success_count = 0;
+    for handle in handles {
+        if handle.await.expect("Task should complete").is_ok() {
+            success_count += 1;
+        }
+    }
+
+    // All 10 transfers should succeed
+    assert_eq!(success_count, 10, "All 10 transfers should succeed");
+
+    // Verify final balances
+    let wallet = wallet_mgr
+        .get_wallet(user.id)
+        .await
+        .expect("Should get wallet");
+    assert_eq!(
+        wallet.balance, 9000,
+        "Wallet balance should be 10000 - 1000"
+    );
+
+    let escrow_balance: i64 =
+        sqlx::query_scalar("SELECT balance FROM table_escrows WHERE table_id = $1")
+            .bind(table_id)
+            .fetch_one(pool.as_ref())
+            .await
+            .expect("Should get escrow balance");
+    assert_eq!(escrow_balance, 1000, "Escrow balance should be 1000");
+
+    cleanup_table_escrow(&pool, table_id).await;
+    cleanup_user(&pool, username).await;
+}
+
+#[tokio::test]
+async fn test_zero_amount_transfers() {
+    // Test: Zero amount transfers should be rejected
+    let (wallet_mgr, auth_mgr, pool) = setup_managers().await;
+    let username = "test_zero_transfer";
+    let table_id = 1001;
+    cleanup_user(&pool, username).await;
+    cleanup_table_escrow(&pool, table_id).await;
+
+    // Register user
+    let user = auth_mgr
+        .register(RegisterRequest {
+            username: username.to_string(),
+            password: "SecurePass123!".to_string(),
+            display_name: username.to_string(),
+            email: None,
+        })
+        .await
+        .expect("Registration should succeed");
+
+    wallet_mgr
+        .claim_faucet(user.id)
+        .await
+        .expect("Faucet claim should succeed");
+
+    // Create table escrow
+    sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0) ON CONFLICT (table_id) DO UPDATE SET balance = 0")
+        .bind(table_id)
+        .execute(pool.as_ref())
+        .await
+        .expect("Should create table escrow");
+
+    // Try zero transfer
+    let result = wallet_mgr
+        .transfer_to_escrow(user.id, table_id, 0, unique_key("zero"))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "Zero amount transfer should be rejected"
+    );
+
+    cleanup_table_escrow(&pool, table_id).await;
+    cleanup_user(&pool, username).await;
+}
+
+#[tokio::test]
+async fn test_negative_amount_rejected() {
+    // Test: Negative amounts should be rejected
+    let (wallet_mgr, auth_mgr, pool) = setup_managers().await;
+    let username = "test_negative";
+    let table_id = 1002;
+    cleanup_user(&pool, username).await;
+    cleanup_table_escrow(&pool, table_id).await;
+
+    // Register user
+    let user = auth_mgr
+        .register(RegisterRequest {
+            username: username.to_string(),
+            password: "SecurePass123!".to_string(),
+            display_name: username.to_string(),
+            email: None,
+        })
+        .await
+        .expect("Registration should succeed");
+
+    wallet_mgr
+        .claim_faucet(user.id)
+        .await
+        .expect("Faucet claim should succeed");
+
+    // Create table escrow
+    sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 100) ON CONFLICT (table_id) DO UPDATE SET balance = 100")
+        .bind(table_id)
+        .execute(pool.as_ref())
+        .await
+        .expect("Should create table escrow");
+
+    // Try negative transfer from escrow
+    let result = wallet_mgr
+        .transfer_from_escrow(user.id, table_id, -100, unique_key("negative"))
+        .await;
+
+    assert!(
+        result.is_err(),
+        "Negative amount transfer should be rejected"
+    );
+
+    cleanup_table_escrow(&pool, table_id).await;
+    cleanup_user(&pool, username).await;
+}
+
+#[tokio::test]
+async fn test_transaction_idempotency() {
+    // Test: Same transaction key should not be processed twice
+    let (wallet_mgr, auth_mgr, pool) = setup_managers().await;
+    let username = "test_idempotency";
+    let table_id = 1003;
+    cleanup_user(&pool, username).await;
+    cleanup_table_escrow(&pool, table_id).await;
+
+    // Register user
+    let user = auth_mgr
+        .register(RegisterRequest {
+            username: username.to_string(),
+            password: "SecurePass123!".to_string(),
+            display_name: username.to_string(),
+            email: None,
+        })
+        .await
+        .expect("Registration should succeed");
+
+    wallet_mgr
+        .claim_faucet(user.id)
+        .await
+        .expect("Faucet claim should succeed");
+
+    // Create table escrow
+    sqlx::query("INSERT INTO table_escrows (table_id, balance) VALUES ($1, 0) ON CONFLICT (table_id) DO UPDATE SET balance = 0")
+        .bind(table_id)
+        .execute(pool.as_ref())
+        .await
+        .expect("Should create table escrow");
+
+    let tx_key = unique_key("idempotent");
+
+    // First transfer
+    wallet_mgr
+        .transfer_to_escrow(user.id, table_id, 100, tx_key.clone())
+        .await
+        .expect("First transfer should succeed");
+
+    let wallet_first = wallet_mgr
+        .get_wallet(user.id)
+        .await
+        .expect("Should get wallet");
+    let balance_after_first = wallet_first.balance;
+
+    // Second transfer with same key (simulating retry)
+    wallet_mgr
+        .transfer_to_escrow(user.id, table_id, 100, tx_key)
+        .await
+        .ok(); // May succeed or fail depending on implementation
+
+    let wallet_second = wallet_mgr
+        .get_wallet(user.id)
+        .await
+        .expect("Should get wallet");
+    let balance_after_second = wallet_second.balance;
+
+    // Balance should be the same (idempotent)
+    assert_eq!(
+        balance_after_first, balance_after_second,
+        "Balance should not change on duplicate transaction"
+    );
 
     cleanup_table_escrow(&pool, table_id).await;
     cleanup_user(&pool, username).await;

@@ -3,8 +3,8 @@
 Production-ready poker platform built in Rust with enterprise-grade security, real-time gameplay, and smart bot opponents.
 
 [![Rust](https://img.shields.io/badge/rust-2024%20edition-orange.svg)](https://www.rust-lang.org/)
-[![Tests](https://img.shields.io/badge/tests-661%20passing-brightgreen.svg)]()
-[![Coverage](https://img.shields.io/badge/coverage-73.63%25-green.svg)]()
+[![Tests](https://img.shields.io/badge/tests-744%20passing-brightgreen.svg)]()
+[![Coverage](https://img.shields.io/badge/coverage-62.09%25-green.svg)]()
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 ## Features
@@ -17,7 +17,7 @@ Production-ready poker platform built in Rust with enterprise-grade security, re
 - ✅ **Multi-Table Support** - Actor-based concurrent table management
 - ✅ **Rich TUI Client** - Beautiful terminal interface with colored cards
 - ✅ **Tournament Mode** - Sit-n-Go tournaments with blind progression
-- ✅ **661 Tests** - Comprehensive testing (0 failures, 0 warnings)
+- ✅ **744 Tests** - Comprehensive testing (0 failures, 0 warnings)
 - ✅ **Zero Technical Debt** - Production-ready code quality
 
 ## Quick Start
